@@ -2,7 +2,6 @@
 // 従来のパターンシークエンスのスクリプト
 // 今、いろいろ改造中。以前のパターンを全て再現できるのはもちろんのこと、
 // さらに新しい、たとえば速度ベースのオブジェクトを動かしたりとかいろいろできるように改造中。
-// 前回のスクリプトで達成できなかったインターセクションのチェンジとかやりたいね。
 
 let all;
 let hueSet;
@@ -156,11 +155,11 @@ class actor{
 
 // 以下がビジュアルの部分. とりあえずシンプルにいきましょう。
 class movingActor extends actor{
-  constructor(f = undefined, colorId){
+  constructor(f = undefined, colorId = 0, figureId = 0){
     super(f);
     this.pos = createVector();
     let myColor = color(hueSet[colorId], 100, 100);
-    this.visual = new figure(myColor);
+    this.visual = new figure(myColor, figureId);
   }
   setPos(x, y){
     this.pos.set(x, y);
@@ -174,22 +173,75 @@ class movingActor extends actor{
 }
 
 class figure{
-  constructor(myColor){
+  constructor(myColor, figureId){
     this.myColor = myColor;
+    this.figureId = figureId;
     this.graphic = createGraphics(40, 40);
-    figure.setGraphic(this.graphic, myColor);
+    figure.setGraphic(this.graphic, myColor, figureId);
     this.rotation = 0; // 動きがないとね。
   }
-  static setGraphic(img, myColor){
+  static setGraphic(gr, myColor, figureId){
     // 形のバリエーションは個別のプログラムでやってね
-    img.clear();
-    img.noStroke();
-    img.fill(myColor);
-    // 正方形
-    img.rect(10, 10, 20, 20);
-    img.fill(255);
-    img.rect(16, 16, 2, 5);
-    img.rect(24, 16, 2, 5);
+    gr.clear();
+    gr.noStroke();
+    gr.fill(myColor);
+    if(figureId === 0){
+      // 正方形
+      gr.rect(10, 10, 20, 20);
+      gr.fill(255);
+      gr.rect(15, 15, 2, 5);
+      gr.rect(23, 15, 2, 5);
+    }else if(figureId === 1){
+      // 星型
+      let outer = rotationSeq(0, -12, 2 * PI / 5, 5, 20, 20);
+      let inner = rotationSeq(0, 6, 2 * PI / 5, 5, 20, 20);
+      for(let i = 0; i < 5; i++){
+        let k = (i + 2) % 5;
+        let l = (i + 3) % 5;
+        gr.quad(outer[i].x, outer[i].y, inner[k].x, inner[k].y, 20, 20, inner[l].x, inner[l].y);
+      }
+      gr.fill(255);
+      gr.rect(15, 17, 2, 5);
+      gr.rect(23, 17, 2, 5);
+    }else if(figureId === 2){
+      // 三角形
+      gr.triangle(20, 20 - 24 / Math.sqrt(3), 32, 20 + (12 / Math.sqrt(3)), 8, 20 + (12 / Math.sqrt(3)));
+      gr.fill(255);
+      gr.rect(15, 17, 2, 5);
+      gr.rect(23, 17, 2, 5);
+    }else if(figureId === 3){
+      // ひしがた
+      gr.quad(28, 20, 20, 20 - 10 * Math.sqrt(3), 12, 20, 20, 20 + 10 * Math.sqrt(3));
+      gr.fill(255);
+      gr.rect(15, 17, 2, 5);
+      gr.rect(23, 17, 2, 5);
+    }else if(figureId === 4){
+      // 六角形
+      gr.quad(32, 20, 26, 20 - 6 * Math.sqrt(3), 14, 20 - 6 * Math.sqrt(3), 8, 20);
+      gr.quad(32, 20, 26, 20 + 6 * Math.sqrt(3), 14, 20 + 6 * Math.sqrt(3), 8, 20);
+      gr.fill(255);
+      gr.rect(15, 17, 2, 5);
+      gr.rect(23, 17, 2, 5);
+    }else if(figureId === 5){
+      // なんか頭ちょろってやつ
+      gr.ellipse(20, 20, 20, 20);
+      gr.triangle(20, 20, 20 - 5 * Math.sqrt(3), 15, 20, 0);
+      gr.fill(255);
+      gr.rect(15, 17, 2, 5);
+      gr.rect(23, 17, 2, 5);
+    }else if(figureId === 6){
+      // 逆三角形
+      gr.triangle(20, 20 + 24 / Math.sqrt(3), 32, 20 - (12 / Math.sqrt(3)), 8, 20 - (12 / Math.sqrt(3)));
+      gr.fill(255);
+      gr.rect(15, 17, 2, 5);
+      gr.rect(23, 17, 2, 5);
+    }else if(figureId === 7){
+      // デフォルト用の円形
+      gr.ellipse(20, 20, 20, 20);
+      gr.fill(255);
+      gr.rect(15, 17, 2, 5);
+      gr.rect(23, 17, 2, 5);
+    }
   }
   render(gr, pos){
     gr.push();
@@ -375,7 +427,7 @@ function createPattern(index, _pattern){
     let flowSet = getConstantFlows(vecs, [0, 1, 2, 4, 1, 2, 3, 5, 6, 7, 8, 9, 10, 7, 9, 10, 11], [1, 2, 3, 0, 5, 6, 7, 4, 5, 6, 4, 5, 6, 11, 8, 9, 10], constSeq(40, 17));
     connectFlows(flowSet, [4, 8, 11, 5, 9, 12, 7, 3, 14, 10, 0, 15, 1, 16, 2, 6, 13], [[7], [7], [7], [8], [8], [8], [3], [0], [10], [3], [1, 4], [11, 14], [2, 5], [12, 15], [6], [9, 13], [16]]);
     renderFlows(_pattern.bgLayer, flowSet);
-    let actorSet = getActors(flowSet, [0, 7, 14], [0, 1, 2]);
+    let actorSet = getActors(flowSet, [0, 7, 14], [0, 1, 2], [2, 2, 2]);
     _pattern.actors = actorSet;
     activateAll(actorSet);
   }else if(index === 1){
@@ -387,7 +439,7 @@ function createPattern(index, _pattern){
     let flowSet = getConstantFlows(vecs, [0, 1, 2, 4, 1, 2, 3, 5, 6, 7, 8, 9, 10, 7, 9, 10, 11], [1, 2, 3, 0, 5, 6, 7, 4, 5, 6, 4, 5, 6, 11, 8, 9, 10], constSeq(70, 17));
     connectFlows(flowSet, [4, 8, 11, 5, 9, 12, 7, 3, 14, 10, 0, 15, 1, 16, 2, 6, 13], [[7], [7], [7], [8], [8], [8], [3], [0], [10], [3], [1, 4], [11, 14], [2, 5], [12, 15], [6], [9, 13], [16]]);
     renderFlows(_pattern.bgLayer, flowSet);
-    let actorSet = getActors(flowSet, [0, 7, 14], [0, 1, 2]);
+    let actorSet = getActors(flowSet, [0, 7, 14], [0, 1, 2], [1, 1, 1]);
     _pattern.actors = actorSet;
     activateAll(actorSet);
   }
@@ -414,11 +466,11 @@ function renderFlows(gr, flowSet){
   // graphicにflowをまとめて描画だぜ
   flowSet.forEach(function(_flow){ _flow.render(gr); })
 }
-function getActors(flows, flowIds, colorIds){
+function getActors(flows, flowIds, colorIds, figureIds){
   // まとめてactorゲットだぜ（スピードが必要なら用意する）（あ、あとfigureIdほしいです）（ぜいたく～～）
   let actorSet = [];
   for(let i = 0; i < flowIds.length; i++){
-    let _actor = new movingActor(flows[flowIds[i]], colorIds[i]);
+    let _actor = new movingActor(flows[flowIds[i]], colorIds[i], figureIds[i]);
     actorSet.push(_actor);
   }
   return actorSet;
