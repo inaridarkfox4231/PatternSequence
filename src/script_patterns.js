@@ -16,6 +16,7 @@ const IN_PROGRESS = 1; // flow実行中の状態
 const COMPLETED = 2; // flowが完了した状態
 
 const PATTERN_NUM = 2; // パターン増やすときはここを変えてね。
+const INITIAL_PATTERN_INDEX = 0; // 最初に現れるパターン。調べたいパターンを先に見たいときにどうぞ。
 
 function setup(){
   myCanvas = createCanvas(640, 480);
@@ -279,13 +280,23 @@ class entity extends actor{
 
 // -------------------------------------------------------------------------------------------------- //
 function initialize(){
-  let p0 = new pattern(0);
-  let p1 = new pattern(1);
+  // これでパターンを増やしてもいじるところはどこにもない。やったね。総数増やすだけでいい。初めの位置もいじれるし。
+  let patternArray = [];
   let pause = new pauseState();
-  p0.convertList.push(pause);
-  p1.convertList.push(pause); // pauseにしか行けないようにする（ワンクリック遷移は廃止）
-  pause.convertList = [p0, p1]; // pauseからp0, p1に行ける。原理的にはどこへも行けるのですよ。ハブのような感じ。
-  return p0; // そうそう。これをentityにセットする。
+  for(let i = 0; i < PATTERN_NUM; i++){
+    let ptn = new pattern(i);
+    patternArray.push(ptn);
+    ptn.convertList.push(pause);
+    pause.convertList.push(ptn);
+  }
+  return patternArray[INITIAL_PATTERN_INDEX];
+  //let p0 = new pattern(0);
+  //let p1 = new pattern(1);
+  //let pause = new pauseState();
+  //p0.convertList.push(pause);
+  //p1.convertList.push(pause); // pauseにしか行けないようにする（ワンクリック遷移は廃止）
+  //pause.convertList = [p0, p1]; // pauseからp0, p1に行ける。原理的にはどこへも行けるのですよ。ハブのような感じ。
+  //return p0; // そうそう。これをentityにセットする。
 }
 
 // これによってたとえばポーズ画面が導入できるようになる。
