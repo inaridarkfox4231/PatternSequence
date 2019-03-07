@@ -1,16 +1,16 @@
 'use strict';
 // 従来のパターンシークエンスのスクリプト
+// 今、いろいろ改造中。以前のパターンを全て再現できるのはもちろんのこと、
+// さらに新しい、たとえば速度ベースのオブジェクトを動かしたりとかいろいろできるように改造中。
+// 前回のスクリプトで達成できなかったインターセクションのチェンジとかやりたいね。
 
 let all;
-//let clickFlag;
 let hueSet;
 
 let clickPosX;
 let clickPosY;
 
 let myCanvas; // canvasをグローバルにする・・
-
-let pauseFlag = false;
 
 const IDLE = 0; // initialize前の状態
 const IN_PROGRESS = 1; // flow実行中の状態
@@ -24,7 +24,6 @@ function setup(){
   hueSet = [0, 10, 17, 35, 52, 64, 80];
   let initialFlow = initialize(); // 初期化でもろもろ準備して最後に最初のFlowを返す
   all = new entity(initialFlow); // それをセットしてentityを準備
-  //clickFlag = false; // クリックされるとtrueになり、情報を処理した後でfalseに戻る
   clickPosX = -1;
   clickPosY = -1; // クリックするとpos情報が入る
   all.activate(); // activate. これですべてが動き出すといいのだけどね。
@@ -38,7 +37,6 @@ function draw(){
 // 押されたときは何も起こらない。押して離されたときに起きる。
 // ほんとうはバリデーションかけてやらないといけないんだけどね・・・いつでもクリック受け付けちゃうと困るから。
 function mouseClicked(){
-  //clickFlag = true;
   clickPosX = mouseX;
   clickPosY = mouseY;
 }
@@ -52,13 +50,8 @@ function mouseClicked(){
 // ポーズを解除した時次のパターンに移行しなくなります。すげぇ。
 // まあ、最終的にはポーズ画面から別のパターンに遷移できるようにしたいんだけどね・・・
 function flagReset(){
-  //clickFlag = false;
   clickPosX = -1;
   clickPosY = -1; // リセット
-}
-
-function keyTyped(){
-  if(key === 'p'){ pauseFlag = !pauseFlag; }
 }
 
 // 簡単なカウンター
@@ -237,8 +230,6 @@ function initialize(){
   let p0 = new pattern(0);
   let p1 = new pattern(1);
   let pause = new pauseState();
-  //p0.convertList = [p1, pause]; // p0 → p1, pause
-  //p1.convertList = [p0, pause]; // p1 → p0, pause
   p0.convertList.push(pause);
   p1.convertList.push(pause); // pauseにしか行けないようにする（ワンクリック遷移は廃止）
   pause.convertList = [p0, p1]; // pauseからp0, p1に行ける。原理的にはどこへも行けるのですよ。ハブのような感じ。
@@ -281,6 +272,11 @@ class pattern extends flow{
     _entity.currentPatternIndex = this.patternIndex; // indexの更新
     if(!this.visited){
       createPattern(this.patternIndex, this);
+      this.bgLayer.textSize(20);
+      this.bgLayer.fill(0);
+      this.bgLayer.rect(245, 420, 150, 40);
+      this.bgLayer.fill(255);
+      this.bgLayer.text("TO PAUSE", 270, 450);
       this.visited = true;
     }
   }
@@ -288,21 +284,19 @@ class pattern extends flow{
     this.actors.forEach(function(a){ a.update(); })
     this.objLayer.clear(); // objLayerは毎フレームリセットしてactorを貼り付ける(displayableでなければスルーされる)
     this.actors.forEach(function(a){ a.render(this.objLayer); }, this)
-    if(pauseFlag){ _entity.setState(COMPLETED); }
-    // one-click-convertは廃止
-    //else if(clickFlag){ _entity.setState(COMPLETED); clickFlag = false; } // クリックしたらパターンチェンジ、の表現
+    // クリックするとポーズに入る
+    if(clickPosX > 245 && clickPosX < 395 && clickPosY > 420 && clickPosY < 460){
+      _entity.setState(COMPLETED);
+      clickPosX = -1; clickPosY = -1;
+    }
   }
   display(){
     image(this.bgLayer, 0, 0);
     image(this.objLayer, 0, 0);
   }
   convert(_entity){
-    if(pauseFlag){
-      //this.convertList[1].preRender(this.bgLayer, this.objLayer) // preRendering, これによりカバーが掛けられる
-      _entity.currentFlow = this.convertList[0];
-    } // 1番がpause.
-    //else{ _entity.currentFlow = this.convertList[0]; } // 0番が次。
-    //_entity.reset(); // 移るときはリセット, しない？
+    // 面倒な場合分けは不要。ポーズに行くだけ。簡単。
+    _entity.currentFlow = this.convertList[0];
   }
 }
 
@@ -312,7 +306,6 @@ class pauseState extends flow{
     this.bgLayer = createGraphics(width, height);
     this.objLayer = createGraphics(width, height);
   }
-  //preRender(gr1, gr2){} // やめた
   initialize(_entity){
     // 現時点でのcanvasの状態をまずレンダリング
     this.bgLayer.image(myCanvas, 0, 0);
@@ -327,6 +320,11 @@ class pauseState extends flow{
     this.bgLayer.textSize(20);
     this.bgLayer.text('NEXT PATTERN (CLICK)', 180, 240);
     this.bgLayer.text('PREVIOUS PATTERN (CLICK)', 180, 300);
+    // パターンに戻るクリックアクション
+    this.bgLayer.fill(0);
+    this.bgLayer.rect(245, 420, 150, 40);
+    this.bgLayer.fill(255);
+    this.bgLayer.text("TO PATTERN", 260, 450);
   }
   display(_entity){
     // displayでそれを描画するんだけど、何かしたいとき、たとえばobjLayerも用意して何かしらのオブジェクトを
@@ -350,7 +348,11 @@ class pauseState extends flow{
     this.objLayer.fill(255);
     this.objLayer.textSize(20);
     this.objLayer.text("CURRENT PATTERN:" + " " + _entity.currentPatternIndex.toString(), 180, 180);
-    if(!pauseFlag){ _entity.setState(COMPLETED); } // pボタンでポーズ解除
+    if(clickPosX > 245 && clickPosX < 395 && clickPosY > 420 && clickPosY < 460){
+      _entity.setState(COMPLETED);
+      clickPosX = -1; clickPosY = -1;
+    }
+    //if(!pauseFlag){ _entity.setState(COMPLETED); } // pボタンでポーズ解除
   }
   convert(_entity){
     this.bgLayer.clear();
