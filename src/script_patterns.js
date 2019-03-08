@@ -77,7 +77,6 @@ class counter{
 
 class flow{
   constructor(){
-    this.index = flow.index++;
     this.convertList = [];
   }
   addFlow(_flow){ this.convertList.push(_flow); }
@@ -128,7 +127,6 @@ class constantFlow extends flow{
 // actorはflowをこなすだけの存在
 class actor{
   constructor(f = undefined){
-    this.index = actor.index++; // 通し番号
     this.currentFlow = f; // 実行中のフロー
     this.timer = new counter(); // カウンター
     this.isActive = false; // updateを実行するか否かを意味する変数
@@ -253,9 +251,6 @@ class figure{
     gr.pop();
   }
 }
-
-actor.index = 0;
-flow.index = 0;
 
 // -------------------------------------------------------------------------------------------------- //
 
