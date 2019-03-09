@@ -15,8 +15,8 @@ const IDLE = 0; // initialize前の状態
 const IN_PROGRESS = 1; // flow実行中の状態
 const COMPLETED = 2; // flowが完了した状態
 
-const PATTERN_NUM = 2; // パターン増やすときはここを変えてね。
-const INITIAL_PATTERN_INDEX = 0; // 最初に現れるパターン。調べたいパターンを先に見たいときにどうぞ。
+const PATTERN_NUM = 3; // パターン増やすときはここを変えてね。
+const INITIAL_PATTERN_INDEX = 2; // 最初に現れるパターン。調べたいパターンを先に見たいときにどうぞ。
 
 function setup(){
   myCanvas = createCanvas(640, 480);
@@ -87,6 +87,7 @@ class flow{
     if(n === 0){ _actor.setFlow(undefined); _actor.inActivate(); } // non-Activeにすることでエラーを防ぎます。
     else{ _actor.setFlow(this.convertList[randomInt(n)]); }
   }
+  update(){} // 何かしらupdateしたいとき
   render(gr){} // 貼り付け関数なので名前をrenderにしました。
 }
 
@@ -119,6 +120,74 @@ class constantFlow extends flow{
     gr.line(0, 0, -10, 5);
     gr.line(0, 0, -10, -5);
     gr.pop();
+  }
+}
+
+// 一定の間隔でactorを通すハブ
+class delayHub extends flow{
+  constructor(interval){
+    super();
+    this.interval = interval; // いくつの間隔ではきだすかってやつ
+    this.open = false;
+  }
+  update(){
+    if(frameCount % this.interval === 0){ this.open = true; }else{ this.open = false; }
+  }
+  execute(_actor){
+    //console.log(this.open);
+    if(this.open){ _actor.setState(COMPLETED); this.open = false; } // 1体通したら閉じる
+  }
+}
+
+// 速度をセットするだけ
+class setVelocityHub extends flow{
+  constructor(vx, vy){
+    super();
+    this.vx = vx;
+    this.vy = vy;
+  }
+  execute(_bullet){
+    _bullet.setVelocity(this.vx, this.vy); _bullet.setState(COMPLETED);
+  }
+}
+
+// 直線ax+by<0の条件を外れるまで進ませ続ける、ベクトル持ち対象のflow.
+// 反射にも使えるし、ボーリングのガーターみたいに使うことも。基本的には・・
+class restrictedArrow extends flow{
+  constructor(coeffX, coeffY, limit, vx, vy){
+    super();
+    this.coeffX = coeffX;
+    this.coeffY = coeffY;
+    this.limit = limit;
+    this.startVx = vx;
+    this.startVy = vy;
+  }
+  initialize(_bullet){
+    _bullet.setVelocity(this.startVx, this.startVy);
+  }
+  execute(_bullet){
+    if(this.coeffX * _bullet.pos.x + this.coeffY * _bullet.pos.y > this.limit){ _bullet.setState(COMPLETED); }
+    if(_bullet.pos.x < 0 || _bullet.pos.x > width || _bullet.pos.y < 0 || _bullet.pos.y > height){
+      _bullet.setState(COMPLETED);
+    }
+  }
+}
+
+// 一定の高さまで落ちた後跳ねながら転がっていくモーション
+class rollingArrow extends flow{
+  constructor(bottomLevel, gravity, coeff){
+    super();
+    this.bottomLevel = bottomLevel;
+    this.gravity = gravity;
+    this.coeff = coeff; // 反発係数
+  }
+  execute(_bullet){
+    _bullet.velocity.y += this.gravity; // 重力加速度
+    if(_bullet.pos.y > this.bottomLevel){
+      _bullet.pos.y = this.bottomLevel;
+      _bullet.velocity.y = -this.coeff * _bullet.velocity.y;
+    }
+    if(_bullet.pos.x < 0 || _bullet.pos.x > width){ _bullet.setState(COMPLETED); }
   }
 }
 
@@ -168,6 +237,21 @@ class movingActor extends actor{
   }
   render(gr){
     this.visual.render(gr, this.pos); // 自分の位置に表示
+  }
+}
+
+// 速度を持っており、速度によって位置を更新するmovingActor.
+class bullet extends movingActor{
+  constructor(f = undefined, colorId = 0, figureId = 0){
+    super(f, colorId, figureId);
+    this.velocity = createVector(0, 0);
+  }
+  in_progressAction(){
+    this.currentFlow.execute(this);
+    this.pos.add(this.velocity);
+  }
+  setVelocity(newVx, newVy){
+    this.velocity.set(newVx, newVy);
   }
 }
 
@@ -281,50 +365,25 @@ function initialize(){
   for(let i = 0; i < PATTERN_NUM; i++){
     let ptn = new pattern(i);
     patternArray.push(ptn);
-    ptn.convertList.push(pause);
-    pause.convertList.push(ptn);
+    ptn.convertList.push(pause); // すべてのパターン→pause
+    pause.convertList.push(ptn); // pause→すべてのパターン
   }
   return patternArray[INITIAL_PATTERN_INDEX];
-  //let p0 = new pattern(0);
-  //let p1 = new pattern(1);
-  //let pause = new pauseState();
-  //p0.convertList.push(pause);
-  //p1.convertList.push(pause); // pauseにしか行けないようにする（ワンクリック遷移は廃止）
-  //pause.convertList = [p0, p1]; // pauseからp0, p1に行ける。原理的にはどこへも行けるのですよ。ハブのような感じ。
-  //return p0; // そうそう。これをentityにセットする。
 }
-
-// これによってたとえばポーズ画面が導入できるようになる。
-// つまり、ポーズ画面特有のdisplay方法を使えるって事・・
-// 絵空事なんだけど、たとえばね、ボタンPとか？押すと、ポーズに移行。
-// 移行するときリセットとかはしない、ただexecuteをやめるだけ（inActivateとも違う）。
-// グラフィックはconvertするときにそのデータをポーズ画面stateのグラフィックにrenderingする。
-// そしてポーズのinitializeでそこに透明度のあるバックグラウンドを貼り付ける。（HSB100モードなら0, 0, 0, 40くらいで）
-// それがポーズstateにおけるbgLayerの代りみたいな感じになって、そのうえでカーソルとか動かす・・
-// ポーズstateはすべてのパターンから行くことができすべてのパターンに行くことができる。
-// ただしどこから来たのかを記憶していてそのパターンにしかconvertできない。
-// といいつつ・・・・
-// 実は、ポーズから別のpatternにconvertするシステムも考えている。サムネイル並んでてクリックで・・
-// patternごとにactorの集合とbgLayerとobjLayerを与えて、最初に訪れた時だけ
-// もろもろ準備する感じ。で、visitedがtrueになる。次に訪れたときはそこでのactorたちが
-// 中断させられていたexecuteを再開して再び動き出す感じで。で、visitedがtrueならinitializeはすっとばして・・とか。
-// つまりパターンシークエンスにおいてentityはactorやLayerの概念をもたず、それらはすべて
-// pauseとpattern持ちにするってこと、まあ一般的ではないかもだけど。内容が既に一般ではないし。
-// もしくは・・・
-// entityにもbgLayerやobjLayerを持たせておいて・・んー？？でもなぁ。
-
-// というわけでやめました。entityがスカスカに・・いいのか、これ。
+// ポーズ画面にサムネイルとタイトルつけて両側に△の右向きと左向き用意してんで・・
 
 class pattern extends flow{
   constructor(patternIndex){
     super();
     this.patternIndex = patternIndex; // indexに応じてパターンを生成
     this.actors = [];
+    this.activeFlow = []; // updateしたいflowをここに入れる
     this.bgLayer = createGraphics(width, height);
     this.objLayer = createGraphics(width, height);
     this.bgLayer.colorMode(HSB, 100);
     this.objLayer.colorMode(HSB, 100);
     this.visited = false; // 最初に来た時にtrueになってそれ以降は再訪してもinitializeが実行されない。
+    this.theme = ""; // テーマ名をここに書く（ラベル）
   }
   initialize(_entity){
     _entity.currentPatternIndex = this.patternIndex; // indexの更新
@@ -340,12 +399,13 @@ class pattern extends flow{
   }
   execute(_entity){
     this.actors.forEach(function(a){ a.update(); })
+    this.activeFlow.forEach(function(f){ f.update(); })
     this.objLayer.clear(); // objLayerは毎フレームリセットしてactorを貼り付ける(displayableでなければスルーされる)
     this.actors.forEach(function(a){ a.render(this.objLayer); }, this)
     // クリックするとポーズに入る
     if(clickPosX > 245 && clickPosX < 395 && clickPosY > 420 && clickPosY < 460){
       _entity.setState(COMPLETED);
-      clickPosX = -1; clickPosY = -1;
+      flagReset();
     }
   }
   display(){
@@ -395,11 +455,11 @@ class pauseState extends flow{
     // というわけでポーズ中に何かしたいときはここに書いてね！
     if(clickPosX > 180 && clickPosX < 420 && clickPosY > 220 && clickPosY < 300){
       let curId = _entity.currentPatternIndex;
-      console.log(curId);
+      //console.log(curId);
       if(clickPosY < 240){ curId = (curId + 1) % PATTERN_NUM; }
       else if(clickPosY > 280){ curId = (curId + PATTERN_NUM - 1) % PATTERN_NUM; }
       _entity.currentPatternIndex = curId;
-      clickPosX = -1; clickPosY = -1;
+      flagReset();
     }
     // 変化させるところはobjLayerに書いてね
     this.objLayer.clear();
@@ -408,7 +468,7 @@ class pauseState extends flow{
     this.objLayer.text("CURRENT PATTERN:" + " " + _entity.currentPatternIndex.toString(), 180, 180);
     if(clickPosX > 245 && clickPosX < 395 && clickPosY > 420 && clickPosY < 460){
       _entity.setState(COMPLETED);
-      clickPosX = -1; clickPosY = -1;
+      flagReset();
     }
     //if(!pauseFlag){ _entity.setState(COMPLETED); } // pボタンでポーズ解除
   }
@@ -436,18 +496,47 @@ function createPattern(index, _pattern){
     let actorSet = getActors(flowSet, [0, 7, 14], [0, 1, 2], [2, 2, 2]);
     _pattern.actors = actorSet;
     activateAll(actorSet);
+    _pattern.theme = "sample1";
   }else if(index === 1){
-    // パターンを記述
-    _pattern.bgLayer.background(40, 30, 100);
-    let posX = multiSeq(arSeq(100, 100, 4), 3);
-    let posY = jointSeq([constSeq(200, 4), constSeq(300, 4), constSeq(400, 4)]);
-    let vecs = getVector(posX, posY);
-    let flowSet = getConstantFlows(vecs, [0, 1, 2, 4, 1, 2, 3, 5, 6, 7, 8, 9, 10, 7, 9, 10, 11], [1, 2, 3, 0, 5, 6, 7, 4, 5, 6, 4, 5, 6, 11, 8, 9, 10], constSeq(70, 17));
-    connectFlows(flowSet, [4, 8, 11, 5, 9, 12, 7, 3, 14, 10, 0, 15, 1, 16, 2, 6, 13], [[7], [7], [7], [8], [8], [8], [3], [0], [10], [3], [1, 4], [11, 14], [2, 5], [12, 15], [6], [9, 13], [16]]);
-    renderFlows(_pattern.bgLayer, flowSet);
-    let actorSet = getActors(flowSet, [0, 7, 14], [0, 1, 2], [1, 1, 1]);
-    _pattern.actors = actorSet;
-    activateAll(actorSet);
+    // パターンを記述(restrictedArrowの実験)
+    _pattern.bgLayer.background(30, 30, 100);
+    let delay = new delayHub(60); // 60フレーム間隔で射出
+     // 忘れずにactiveFlowに登録
+    _pattern.activeFlow.push(delay);
+    // 3本の直線を引きます。右に行って、左下に行って、それから上に行きます。
+    let flowSet = getRestrictedArrows([1, 0, 0], [0, 1, -1], [400, 400, -100], [2, -2, 0], [0, 2, -2]);
+    flowSet.push(delay);
+    connectFlows(flowSet, [0, 1, 2, 3], [[1], [2], [0], [0]]); // 3 → 0 → 1 → 2 → 0 → ...
+    let bulletSet = getBullets(flowSet, [3, 3, 3, 3, 3], [0, 1, 2, 3, 4], [1, 1, 1, 1, 1]) // delayHubにセット
+    bulletSet.forEach(function(b){ b.setPos(100, 100); })
+    _pattern.actors = bulletSet;
+    activateAll(bulletSet);
+    _pattern.theme = "restrictedAllow";
+  }else if(index === 2){
+    // rollingArrowの実験（bullet対象のflowをArrowと名付けて区別してる）
+    _pattern.bgLayer.background(70, 30, 100);
+    _pattern.bgLayer.fill(6, 90, 100);
+    _pattern.bgLayer.noStroke();
+    _pattern.bgLayer.rect(0, 340, 640, 160);
+    let rolling = new rollingArrow(320, 1, 0.7);
+    let delay = new delayHub(60);
+    // 忘れずにactiveFlowに登録
+    _pattern.activeFlow.push(delay);
+    // 速度セット用
+    let setter = new setVelocityHub(4, -20);
+    delay.convertList.push(setter); // delayのあとsetter.
+    setter.convertList.push(rolling); // setterのあとrolling
+    // constantFlowつなげてスタート位置に戻したいわね
+    let upward = new restrictedArrow(0, -1, -100, 0, -4);
+    let toStart = new constantFlow(createVector(640, 100), createVector(20, 240), 150);
+    rolling.convertList.push(upward);
+    upward.convertList.push(toStart);
+    toStart.convertList.push(setter);
+    let bulletSet = getBullets([delay], [0, 0, 0, 0, 0], [0, 1, 2, 3, 4], [3, 3, 3, 3, 3]);
+    _pattern.actors = bulletSet;
+    activateAll(bulletSet);
+    bulletSet.forEach(function(b){ b.setPos(20, 240); })
+    _pattern.theme = "rollingArrow";
   }
 }
 
@@ -460,6 +549,17 @@ function getConstantFlows(vecs, fromIds, toIds, spans){
   }
   return flowSet;
 }
+
+function getRestrictedArrows(cXs, cYs, limits, vXs, vYs){
+  // restrictedArrow.
+  let flowSet = [];
+  for(let i = 0; i < cXs.length; i++){
+    let _flow = new restrictedArrow(cXs[i], cYs[i], limits[i], vXs[i], vYs[i]);
+    flowSet.push(_flow);
+  }
+  return flowSet;
+}
+
 // flowの登録関数は今までと同じようにいくらでも増やすことができる。
 // 今までと同じようにグローバルの関数として。
 function connectFlows(flowSet, idSet, destinationSet){
@@ -480,6 +580,16 @@ function getActors(flows, flowIds, colorIds, figureIds){
     actorSet.push(_actor);
   }
   return actorSet;
+}
+function getBullets(flows, flowIds, colorIds, figureIds){
+  // まとめてactorゲットだぜ（スピードが必要なら用意する）（あ、あとfigureIdほしいです）（ぜいたく～～）
+  let bulletSet = [];
+  for(let i = 0; i < flowIds.length; i++){
+    let _bullet = new bullet(flows[flowIds[i]], colorIds[i], figureIds[i]);
+    console.log(figureIds[i]);
+    bulletSet.push(_bullet);
+  }
+  return bulletSet;
 }
 function setActorPoses(vecs, vecIds, actorSet){
   for(let i = 0; i < vecs.length; i++){ actorSet[i].setPos(vecs[vecIds[i]]); }
