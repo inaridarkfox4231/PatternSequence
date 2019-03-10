@@ -15,8 +15,8 @@ const IDLE = 0; // initialize前の状態
 const IN_PROGRESS = 1; // flow実行中の状態
 const COMPLETED = 2; // flowが完了した状態
 
-const PATTERN_NUM = 3; // パターン増やすときはここを変えてね。
-const INITIAL_PATTERN_INDEX = 2; // 最初に現れるパターン。調べたいパターンを先に見たいときにどうぞ。
+const PATTERN_NUM = 5; // パターン増やすときはここを変えてね。
+const INITIAL_PATTERN_INDEX = 4; // 最初に現れるパターン。調べたいパターンを先に見たいときにどうぞ。
 
 function setup(){
   myCanvas = createCanvas(640, 480);
@@ -81,7 +81,7 @@ class flow{
   }
   addFlow(_flow){ this.convertList.push(_flow); }
   initialize(_actor){} // flowの内容に応じて様々な初期化を行います
-  execute(_actor){} // デフォルトは何もしない。つまりCOMPLETEDにすらしない。
+  execute(_actor){ _actor.setState(COMPLETED); }
   convert(_actor){
     let n = this.convertList.length;
     if(n === 0){ _actor.setFlow(undefined); _actor.inActivate(); } // non-Activeにすることでエラーを防ぎます。
@@ -134,8 +134,36 @@ class delayHub extends flow{
     if(frameCount % this.interval === 0){ this.open = true; }else{ this.open = false; }
   }
   execute(_actor){
-    //console.log(this.open);
     if(this.open){ _actor.setState(COMPLETED); this.open = false; } // 1体通したら閉じる
+  }
+}
+
+class randomDelayHub extends delayHub{
+  constructor(interval, r, phi1, phi2){
+    super(interval);
+    this.r = r;
+    this.phi1 = phi1;
+    this.phi2 = phi2; // phi1 < phi2で、この間で大きさrの速度を与える
+  }
+  execute(_bullet){
+    if(this.open){
+      let phi = this.phi1 + random(this.phi2 - this.phi1);
+      _bullet.setVelocity(this.r * cos(phi), this.r * sin(phi));
+      _bullet.setState(COMPLETED);
+      this.open = false;
+    } // 1体通したら閉じる
+  }
+}
+
+// 位置をセットするだけ
+class setPosHub extends flow{
+  constructor(x, y){
+    super();
+    this.x = x;
+    this.y = y;
+  }
+  execute(_actor){
+    _actor.setPos(this.x, this.y); _actor.setState(COMPLETED);
   }
 }
 
@@ -148,6 +176,116 @@ class setVelocityHub extends flow{
   }
   execute(_bullet){
     _bullet.setVelocity(this.vx, this.vy); _bullet.setState(COMPLETED);
+  }
+}
+
+// assembleHub. おなじみ
+class assembleHub extends flow{
+  constructor(limit){
+    super();
+    this.open = false;
+    this.limit = limit;
+    this.volume = 0;
+  }
+  initialize(_actor){ this.volume++; }
+  // 基本的にopen/close処理はupdateに書く
+  update(_actor){
+    if(this.volume >= this.limit){ this.open = true; }
+    else if(this.volume === 0){ this.open = false; }
+  }
+  execute(_actor){
+    if(this.open){ _actor.setState(COMPLETED); this.volume--; }
+  }
+}
+
+// n_wayHub. 2n+1個の方向にとばす
+// 修正する。これだとn_wayGunにならない。
+// 途中で停止するタイマー機能つけたいわね。
+class n_wayHub extends flow{
+  constructor(speed, mainAngle, diffAngle, n, spanTime = -1){
+    super();
+    this.directionArray = [];
+    let diffVector = createVector(-sin(mainAngle), cos(mainAngle)).mult(speed * tan(diffAngle));
+    for(let i = -n; i <= n; i++){
+      this.directionArray.push(createVector(speed * cos(mainAngle) + i * diffVector.x, speed * sin(mainAngle) + i * diffVector.y));
+    }
+    //console.log(this.directionArray);
+    this.currentIndex = 0;
+    this.spanTime = spanTime;
+  }
+  initialize(_bullet){
+    if(this.spanTime < 0){ return; }
+    _bullet.timer.reset(spanTime);
+  }
+  execute(_bullet){
+    if(this.spanTime > 0){
+      _bullet.timer.step();
+      if(_bullet.timer.getCnt() === this.spanTime){ _bullet.setState(COMPLETED); return; }
+    }
+    _bullet.setVelocity(this.directionArray[this.currentIndex]);
+    this.currentIndex = (this.currentIndex + 1) % this.directionArray.length;
+    _bullet.setState(COMPLETED);
+  }
+}
+
+// 画面外まで直進
+class simpleArrow extends flow{
+  constructor(vx, vy){
+    super();
+    this.vx = vx;
+    this.vy = vy;
+  }
+  initialize(_bullet){ _bullet.velocity.set(this.vx, this.vy); }
+  execute(_bullet){
+    if(_bullet.pos.x < 0 || _bullet.pos.x > width || _bullet.pos.y < 0 || _bullet.pos.y > height){
+      _bullet.setState(COMPLETED);
+    }
+    _bullet.pos.add(_bullet.velocity);
+  }
+}
+
+// simpleAccellArrow: 特定の方向に加速していくだけ。あらゆる方向を指定できる。
+
+// ある対象のある方向に直進
+class homingArrow extends flow{
+  constructor(r, targetX, targetY){
+    super();
+    this.r = r;
+    this.targetX = targetX;
+    this.targetY = targetY;
+  }
+  initialize(_bullet){
+    // _bulletの初期位置から(targetX, targetY)に向かう大きさrのベクトルをセットする
+  }
+  execute(_bullet){
+    if(_bullet.pos.x < 0 || _bullet.pos.x > width || _bullet.pos.y < 0 || _bullet.pos.y > height){
+      _bullet.setState(COMPLETED);
+    }
+    _bullet.pos.add(_bullet.velocity);
+  }
+}
+
+// homingAccellArrow: まあ、わかるよね。
+
+// (a, b | c, d)を速度に掛ける。固有ベクトル・・
+class matrixArrow extends flow{
+  constructor(a, b, c, d){
+    super();
+    this.a = a;
+    this.b = b;
+    this.c = c;
+    this.d = d;
+  }
+  execute(_bullet){
+    //if(frameCount % 60 === 0){ console.log(_bullet.velocity); }
+    let vx = _bullet.velocity.x;
+    let vy = _bullet.velocity.y;
+    _bullet.velocity.x = this.a * vx + this.b * vy;
+    _bullet.velocity.y = this.c * vx + this.d * vy;
+    _bullet.pos.add(_bullet.velocity);
+    if(_bullet.pos.x < 0 || _bullet.pos.x > width || _bullet.pos.y < 0 || _bullet.pos.y > height){
+      _bullet.setState(COMPLETED);
+    }
   }
 }
 
@@ -170,6 +308,7 @@ class restrictedArrow extends flow{
     if(_bullet.pos.x < 0 || _bullet.pos.x > width || _bullet.pos.y < 0 || _bullet.pos.y > height){
       _bullet.setState(COMPLETED);
     }
+    _bullet.pos.add(_bullet.velocity);
   }
 }
 
@@ -188,8 +327,11 @@ class rollingArrow extends flow{
       _bullet.velocity.y = -this.coeff * _bullet.velocity.y;
     }
     if(_bullet.pos.x < 0 || _bullet.pos.x > width){ _bullet.setState(COMPLETED); }
+    _bullet.pos.add(_bullet.velocity);
   }
 }
+
+// 3WAYはまずrotary的に3つの方向にとばしてから速度をいじってだね・・・まあいいや。
 
 // 以前のように、多彩なフロー、もしくはハブを追加していくことができる。
 
@@ -241,20 +383,18 @@ class movingActor extends actor{
 }
 
 // 速度を持っており、速度によって位置を更新するmovingActor.
+// 速度による位置の更新はメソッドにより適宜行う
 class bullet extends movingActor{
   constructor(f = undefined, colorId = 0, figureId = 0){
     super(f, colorId, figureId);
     this.velocity = createVector(0, 0);
-  }
-  in_progressAction(){
-    this.currentFlow.execute(this);
-    this.pos.add(this.velocity);
   }
   setVelocity(newVx, newVy){
     this.velocity.set(newVx, newVy);
   }
 }
 
+// ビジュアル担当
 class figure{
   constructor(myColor, figureId){
     this.myColor = myColor;
@@ -335,6 +475,7 @@ class figure{
     gr.pop();
   }
 }
+// figureの拡張クラスを作って、renderでrollingの他に、方向に応じて向きが固定されるのとかやりたい。ぎゅーんって。
 
 // -------------------------------------------------------------------------------------------------- //
 
@@ -537,6 +678,33 @@ function createPattern(index, _pattern){
     activateAll(bulletSet);
     bulletSet.forEach(function(b){ b.setPos(20, 240); })
     _pattern.theme = "rollingArrow";
+  }else if(index === 3){
+    _pattern.bgLayer.background(40, 30, 100);
+    // 、まずrandomDelayHub.
+    let randomDelay = new randomDelayHub(5, 5, 0, 2 * PI);
+    _pattern.activeFlow.push(randomDelay);
+    let setter = new setPosHub(320, 240);
+    let mat = new matrixArrow(1, 0, 0, 1);
+    setter.addFlow(randomDelay);
+    randomDelay.addFlow(mat);
+    mat.addFlow(setter);
+    let bulletSet = getBullets([setter], constSeq(0, 11), [0, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1], constSeq(3, 11));
+    _pattern.actors = bulletSet;
+    activateAll(bulletSet);
+    _pattern.theme = "matrixArrow";
+  }else if(index === 4){
+    _pattern.bgLayer.background(5, 30, 100);
+    // とりあえずassemble.
+    let assemble = new assembleHub(5);
+    _pattern.activeFlow.push(assemble);
+    let n_way = new n_wayHub(10, 0, PI / 8, 10);
+    let mat = new matrixArrow(1.01, 0, 0, 0.8);
+    let setter = new setPosHub(30, 240);
+    connectFlows([setter, assemble, n_way, mat], [0, 1, 2, 3], [[1], [2], [3], [0]]);
+    let bulletSet = getBullets([setter], constSeq(0, 21), multiSeq(arSeq(0, 1, 7), 3), constSeq(3, 21));
+    _pattern.actors = bulletSet;
+    activateAll(bulletSet);
+    _pattern.theme = "assemble and revolver"
   }
 }
 
