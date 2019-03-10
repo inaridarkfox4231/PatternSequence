@@ -15,8 +15,8 @@ const IDLE = 0; // initialize前の状態
 const IN_PROGRESS = 1; // flow実行中の状態
 const COMPLETED = 2; // flowが完了した状態
 
-const PATTERN_NUM = 5; // パターン増やすときはここを変えてね。
-const INITIAL_PATTERN_INDEX = 4; // 最初に現れるパターン。調べたいパターンを先に見たいときにどうぞ。
+const PATTERN_NUM = 6; // パターン増やすときはここを変えてね。
+const INITIAL_PATTERN_INDEX = 5; // 最初に現れるパターン。調べたいパターンを先に見たいときにどうぞ。
 
 function setup(){
   myCanvas = createCanvas(640, 480);
@@ -198,30 +198,45 @@ class assembleHub extends flow{
   }
 }
 
-// n_wayHub. 2n+1個の方向にとばす
+// n_wayHub. 2n+1個の方向にとばす。なのでdirectionArrayの長さは2n+1.
 // 修正する。これだとn_wayGunにならない。
-// 途中で停止するタイマー機能つけたいわね。
+// 修正したよー
+// mainAngleの方向に大きさspeedのベクトルの速度で、それに垂直な方向の成分が、
+// 最小の角度diffAngleで、それを元にして上に等間隔でn本、下に等間隔でn本、まっすぐ。合計2n+1本。
+// つまり(2n+1)wayGunですね～
 class n_wayHub extends flow{
-  constructor(speed, mainAngle, diffAngle, n, spanTime = -1){
+  constructor(speed, mainAngle, diffAngle, n){
     super();
     this.directionArray = [];
     let diffVector = createVector(-sin(mainAngle), cos(mainAngle)).mult(speed * tan(diffAngle));
     for(let i = -n; i <= n; i++){
       this.directionArray.push(createVector(speed * cos(mainAngle) + i * diffVector.x, speed * sin(mainAngle) + i * diffVector.y));
     }
-    //console.log(this.directionArray);
     this.currentIndex = 0;
-    this.spanTime = spanTime;
-  }
-  initialize(_bullet){
-    if(this.spanTime < 0){ return; }
-    _bullet.timer.reset(spanTime);
   }
   execute(_bullet){
-    if(this.spanTime > 0){
-      _bullet.timer.step();
-      if(_bullet.timer.getCnt() === this.spanTime){ _bullet.setState(COMPLETED); return; }
+    _bullet.setVelocity(this.directionArray[this.currentIndex]);
+    this.currentIndex = (this.currentIndex + 1) % this.directionArray.length;
+    _bullet.setState(COMPLETED);
+  }
+}
+
+// mainAngle方向の大きさspeedのベクトルを与える。multiplrOptionは、いくつ重複して与えるかというもの。
+// そのため、最終的なdirectionArrayの長さはこの場合n*mになるわけ。
+// んー・・継承で書いた方がよさそうね・・directionArray作るところ以外いっしょやもんね。
+class circularHub extends flow{
+  constructor(speed, mainAngle, diffAngle, n, multiple = 1){
+    super();
+    this.directionArray = [];
+    for(let i = 0; i < n; i++){
+      for(let j = 0; j < multiple; j++){
+        let vec = createVector(speed * cos(mainAngle + i * diffAngle), speed * sin(mainAngle + i * diffAngle));
+        this.directionArray.push(vec);
+      }
     }
+    this.currentIndex = 0;
+  }
+  execute(_bullet){
     _bullet.setVelocity(this.directionArray[this.currentIndex]);
     this.currentIndex = (this.currentIndex + 1) % this.directionArray.length;
     _bullet.setState(COMPLETED);
@@ -244,7 +259,7 @@ class simpleArrow extends flow{
   }
 }
 
-// simpleAccellArrow: 特定の方向に加速していくだけ。あらゆる方向を指定できる。
+// simpleAccellArrow: 特定の方向に加速していくだけ。あらゆる方向を指定できる。初期速度はハブかなんかで指定する。
 
 // ある対象のある方向に直進
 class homingArrow extends flow{
@@ -256,6 +271,8 @@ class homingArrow extends flow{
   }
   initialize(_bullet){
     // _bulletの初期位置から(targetX, targetY)に向かう大きさrのベクトルをセットする
+    let directionAngle = atan2(this.targetY - _bullet.pos.y, this.targetX - _bullet.pos.x);
+    _bullet.setVelocity(this.r * cos(directionAngle), this.r * sin(directionAngle));
   }
   execute(_bullet){
     if(_bullet.pos.x < 0 || _bullet.pos.x > width || _bullet.pos.y < 0 || _bullet.pos.y > height){
@@ -264,19 +281,30 @@ class homingArrow extends flow{
     _bullet.pos.add(_bullet.velocity);
   }
 }
+// やりたいこと・・n_wayのタイマー付きとhomingを組み合わせて途中まで進んだ後クロスしてとんでいくのやりたいのよね
 
 // homingAccellArrow: まあ、わかるよね。
 
 // (a, b | c, d)を速度に掛ける。固有ベクトル・・
 class matrixArrow extends flow{
-  constructor(a, b, c, d){
+  constructor(a, b, c, d, spanTime = -1){
     super();
     this.a = a;
     this.b = b;
     this.c = c;
     this.d = d;
+    this.spanTime = spanTime;
+  }
+  initialize(_bullet){
+    if(this.spanTime > 0){
+      _bullet.timer.reset(this.spanTime);
+    }
   }
   execute(_bullet){
+    if(this.spanTime > 0){
+      _bullet.timer.step();
+      if(_bullet.timer.getCnt() === this.spanTime){ _bullet.setState(COMPLETED); }
+    }
     //if(frameCount % 60 === 0){ console.log(_bullet.velocity); }
     let vx = _bullet.velocity.x;
     let vy = _bullet.velocity.y;
@@ -389,8 +417,8 @@ class bullet extends movingActor{
     super(f, colorId, figureId);
     this.velocity = createVector(0, 0);
   }
-  setVelocity(newVx, newVy){
-    this.velocity.set(newVx, newVy);
+  setVelocity(newX, newY){
+    this.velocity.set(newX, newY);
   }
 }
 
@@ -695,16 +723,40 @@ function createPattern(index, _pattern){
   }else if(index === 4){
     _pattern.bgLayer.background(5, 30, 100);
     // とりあえずassemble.
-    let assemble = new assembleHub(5);
-    _pattern.activeFlow.push(assemble);
+    let assemble = new assembleHub(21);
+    _pattern.activeFlow.push(assemble); // activeFlowに入れてね
     let n_way = new n_wayHub(10, 0, PI / 8, 10);
-    let mat = new matrixArrow(1.01, 0, 0, 0.8);
+    let mat = new matrixArrow(1.01, 0, 0, 0.8, 25);
+    //let secondDelay = new delayHub(10);
+    //_pattern.activeFlow.push(secondDelay); // activeFlowに入れてね・・自動的に入るようにしたいね・・
+    let homing = new homingArrow(5, 560, 240);
     let setter = new setPosHub(30, 240);
-    connectFlows([setter, assemble, n_way, mat], [0, 1, 2, 3], [[1], [2], [3], [0]]);
+    connectFlows([setter, assemble, n_way, mat, homing], [0, 1, 2, 3, 4], [[1], [2], [3], [4], [0]]);
     let bulletSet = getBullets([setter], constSeq(0, 21), multiSeq(arSeq(0, 1, 7), 3), constSeq(3, 21));
     _pattern.actors = bulletSet;
     activateAll(bulletSet);
-    _pattern.theme = "assemble and revolver"
+    _pattern.theme = "assemble and revolver";
+  }else if(index === 5){
+    // circularの実験したいな
+    _pattern.bgLayer.background(33, 30, 100);
+    let setter_pos = new setPosHub(30, 240);
+    // とりあえずassemble(25)
+    let assemble = new assembleHub(49);
+    _pattern.activeFlow.push(assemble); // これやらないとopenしてくれないの
+    let setter_vec = new setVelocityHub(5, 0);
+    let straight_1 = new matrixArrow(1.01, 0, 0, 0, 45);
+    let circular5 = new circularHub(5, 0, 2 * PI / 7, 7);
+    let straight_2 = new matrixArrow(1, 0, 0, 1, 20);
+    let circular55 = new circularHub(5, 0, 2 * PI / 7, 7, 7);
+    let straight_3 = new matrixArrow(1, 0, 0, 1);
+    connectFlows([setter_pos, assemble, setter_vec, straight_1, circular5, straight_2, circular55, straight_3], [0, 1, 2, 3, 4, 5, 6, 7], [[1], [2], [3], [4], [5], [6], [7], [0]]);
+    let bulletSet = getBullets([setter_pos], constSeq(0, 49), multiSeq(arSeq(0, 1, 7), 7), constSeq(3, 49));
+    _pattern.actors = bulletSet;
+    bulletSet.forEach(function(b){
+      b.setVelocity(5, 0);
+    })
+    activateAll(bulletSet);
+    _pattern.theme = "fireWorks";
   }
 }
 
