@@ -30,7 +30,7 @@ const ROLLING = 0;  // figureの描画モード、回転
 const ORIENTED = 1; // figureの描画モード、指向
 
 // やってみるかー
-const PATTERN_NUM = 1; // パターン増やすときはここを変えてね。
+const PATTERN_NUM = 2; // パターン増やすときはここを変えてね。
 const INITIAL_PATTERN_INDEX = 0; // 最初に現れるパターン。調べたいパターンを先に見たいときにどうぞ。
 
 function setup(){
@@ -359,6 +359,10 @@ class pattern extends flow{
       flagReset(); // flagのResetはこっちでやる
     }
   }
+  convert(_entity){
+    // ひとつしかないから簡略化しよう
+    _entity.setFlow(this.convertList[0]);
+  }
   display(){
     image(this.bgLayer, 0, 0);
     image(this.objLayer, 0, 0);
@@ -366,6 +370,7 @@ class pattern extends flow{
 }
 
 // PAUSE.
+// あ、そうか、ランダムコンバートじゃないからコンバート関数上書きしないといけないんだ（馬鹿？）
 class pauseState extends flow{
   constructor(){
     super();
@@ -374,7 +379,7 @@ class pauseState extends flow{
     this.initialState = PRE; // initializeあり
   }
   initialize(_entity){
-    this.bgLayer.clear(); // 最初にクリアします（こっちに移動した）
+    //this.bgLayer.clear(); // やめた
     // 現時点でのcanvasの状態をまずレンダリング
     this.bgLayer.image(myCanvas, 0, 0);
     // 次に、グレーのカバーを掛ける
@@ -420,10 +425,16 @@ class pauseState extends flow{
       _entity.currentPatternIndex = newCurId;
       flagReset();
     }
+    // 終了条件は画面下のボタンをクリック
     if(clickPosX > 245 && clickPosX < 395 && clickPosY > 420 && clickPosY < 460){
       this.convert(_entity);
+      this.bgLayer.clear(); // ここでclearしないと具合が悪いらしい
       flagReset();
     }
+  }
+  convert(_entity){
+    // ランダムではないのでオーバーライドする
+    _entity.setFlow(this.convertList[_entity.currentPatternIndex]);
   }
   display(_entity){
     image(this.bgLayer, 0, 0);
@@ -447,7 +458,7 @@ function createPattern(index, _pattern){
     // patternのbgLayerにrenderする
     renderFlows(_pattern.bgLayer, flowSet);
     // つなげる
-    connectFlows(flowSet, [0, 1, 2, 3], [[1], [2], [3], [0]]);
+    connectFlows(flowSet, [0, 1, 2, 3], [1, 2, 3, 0]);
     // creatureを作る
     let creatureSet = [];
     creatureSet = getCreatures([0, 1, 2, 3], [0, 0, 0, 0]);
@@ -455,6 +466,32 @@ function createPattern(index, _pattern){
     _pattern.actors = creatureSet;
     // flowをセットする
     for(let i = 0; i < 4; i++){ creatureSet[i].setFlow(flowSet[i]); }
+    // activateする
+    activateAll(creatureSet);
+    // テーマを決める
+    _pattern.theme = "sample0";
+  }else if(index === 1){
+    // パターンを記述する
+    // 背景を作る
+    _pattern.bgLayer.background(80, 30, 100);
+    // constantFlowを12個作る
+    let flowSet = [];
+    let posX = multiSeq(arSeq(100, 100, 3), 3);
+    let posY = jointSeq([constSeq(100, 3), constSeq(200, 3), constSeq(300, 3)]);
+    let vecs = getVector(posX, posY);
+    flowSet = getConstantFlows(vecs, [0, 1, 2, 5, 8, 7, 6, 3, 1, 5, 7, 4], [1, 2, 5, 8, 7, 6, 3, 0, 4, 4, 4, 3], constSeq(50, 12));
+    // patternのbgLayerにrenderする
+    renderFlows(_pattern.bgLayer, flowSet);
+    // つなげる
+    connectFlows(flowSet, [0, 1, 2, 3, 4, 5, 6, 7, 0, 2, 4, 11, 8, 9, 10], [1, 2, 3, 4, 5, 6, 7, 0, 8, 9, 10, 7, 11, 11, 11]);
+    // creatureを作る
+    let creatureSet = [];
+    creatureSet = getCreatures([0, 1, 2, 3], [0, 0, 0, 0]);
+    // patternに登録する
+    _pattern.actors = creatureSet;
+    // flowをセットする
+    let idSet = [0, 4, 11, 7];
+    for(let i = 0; i < 4; i++){ creatureSet[i].setFlow(flowSet[idSet[i]]); }
     // activateする
     activateAll(creatureSet);
     // テーマを決める
@@ -475,10 +512,10 @@ function getConstantFlows(vecs, fromIds, toIds, spans){
   return flowSet;
 }
 
-// idSetの各idのflowにdestinationSetの各flowIdSetに対応するflowが登録される（はずだぜ）
+// 面倒なので、idSetのflowにdestinationSetの各flowが登録されるようにした。
 function connectFlows(flowSet, idSet, destinationSet){
   for(let i = 0; i < idSet.length; i++){
-    destinationSet[i].forEach(function(id){ flowSet[idSet[i]].convertList.push(flowSet[id]); })
+    flowSet[idSet[i]].addFlow(flowSet[destinationSet[i]]);
   }
 }
 
