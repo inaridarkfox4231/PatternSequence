@@ -30,8 +30,8 @@ const ROLLING = 0;  // figureの描画モード、回転
 const ORIENTED = 1; // figureの描画モード、指向
 
 // やってみるかー
-const PATTERN_NUM = 2; // パターン増やすときはここを変えてね。
-const INITIAL_PATTERN_INDEX = 0; // 最初に現れるパターン。調べたいパターンを先に見たいときにどうぞ。
+const PATTERN_NUM = 3; // パターン増やすときはここを変えてね。
+const INITIAL_PATTERN_INDEX = 2; // 最初に現れるパターン。調べたいパターンを先に見たいときにどうぞ。
 
 function setup(){
   myCanvas = createCanvas(640, 480);
@@ -103,7 +103,7 @@ class counter{
 class flow{
   constructor(){
     this.convertList = [];
-    this.initialState = IDLE;
+    this.initialState = PRE; // 基本PRE, 内容が単純ならばACTでOK.
   }
   addFlow(_flow){ this.convertList.push(_flow); }
   initialize(_actor){} // initializeは普通にあるよ
@@ -162,6 +162,42 @@ class constantFlow extends flow{
   }
 }
 
+// とりあえずassembleHub作ってみる。activeFlowなのでcreate時にあれするのを忘れずに
+class assembleHub extends flow{
+  constructor(limit){
+    super();
+    this.volume = 0; // limit個以上集まってるとupdateで開錠され、0だとupdateで施錠される
+    this.limit = limit;
+    this.open = false;
+    this.initialState = PRE;
+  }
+  execute(_actor){
+    if(_actor.state === PRE){ this.volume++; _actor.setState(ACT); }
+    // executeでACTになってもそのターンでupdateされたあとでないと通れないので消費は最小で2フレームになるね。
+    if(this.open){
+      this.convert(_actor);
+      this.volume--;
+    }
+  }
+  update(){
+    if(this.volume >= this.limit){ this.open = true; }
+    else if(this.volume === 0){ this.open = false; }
+  }
+}
+
+// rotaryHubも作っておこう。順繰りにまわすやつ～
+class rotaryHub extends flow{
+  constructor(){
+    super();
+    this.currentIndex = 0;
+    this.initialState = ACT;
+  }
+  execute(_actor){
+    _actor.setFlow(this.convertList[this.currentIndex]);
+    this.currentIndex = (this.currentIndex + 1) % this.convertList.length;
+  } // これだけ。convertするだけのハブは文字通りコンバートを実行しておしまい。簡単だ・・
+}
+
 // timerは必ずしも必要ではないということで。キー入力がトリガーの場合とか。
 class actor{
   constructor(){
@@ -200,7 +236,6 @@ class creature extends actor{
     this.pos.set(x, y);
   }
   render(gr){
-    //console.log("render");
     this.visual.render(gr, this.pos); // 自分の位置に表示
   }
 }
@@ -279,7 +314,6 @@ class figure{
     }
   }
   render(gr, pos, dir = undefined){
-    //console.log("render");
     // dirは速度情報、速度でバリエーションしたいときに使う。
     // bulletのrender命令で速度を代入したりとかする。
     gr.push();
@@ -292,15 +326,17 @@ class figure{
     this.mode = newMode; // とりあえずROLLINGとORIENTEDしか思いつかない
   }
   rotate(gr, dir = undefined){
-    if(this.mode === ROLLING){
+    if(this.mode === ROLLING){ // 回転する
       this.rotation += 0.1;
       gr.rotate(this.rotation);
-    }else if(this.mode = ORIENTED){
+    }else if(this.mode = ORIENTED){ // 速度の方向に合わせる
       this.rotation = dir - (PI / 2);
       gr.rotate(this.rotation);
     }
   }
 }
+
+// bulletも早く実装し直してください
 
 // renderの時に回転させるのか、それとも速度ベクトルを90°反対方向に回して描画するのかとかそういうの。
 
@@ -496,6 +532,36 @@ function createPattern(index, _pattern){
     activateAll(creatureSet);
     // テーマを決める
     _pattern.theme = "sample1";
+  }else if(index === 2){
+    // assembleHub実験～
+    // 背景を作る
+    _pattern.bgLayer.background(10, 30, 100);
+    // constantFlowを12個作る
+    let flowSet = [];
+    let posX = arCosSeq(PI / 3, PI / 3, 6, 100, 320);
+    let posY = arSinSeq(PI / 3, PI / 3, 6, 100, 240);
+    let vecs = getVector(posX, posY);
+    vecs.push(createVector(320, 240));  // 中心の座標
+    flowSet = getConstantFlows(vecs, [0, 1, 2, 3, 4, 5, 6, 6, 6, 1, 3, 5], [1, 2, 3, 4, 5, 0, 0, 2, 4, 6, 6, 6], constSeq(50, 12));
+    // assembleHub.
+    flowSet.push(new assembleHub(3)); // 12.
+    // registActiveFlow.
+    _pattern.activeFlow.push(flowSet[12]); // OK～
+    // rotaryHub.
+    flowSet.push(new rotaryHub()); // 13.
+    // render.
+    renderFlows(_pattern.bgLayer, flowSet);
+    // connect.
+    connectFlows(flowSet, [0, 1, 2, 3, 4, 5, 0, 2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 13, 13], [1, 2, 3, 4, 5, 0, 9, 10, 11, 0, 2, 4, 12, 12, 12, 13, 6, 7, 8]);
+    // creature.
+    let creatureSet = getCreatures([0, 1, 2], [0, 0, 0]);
+    // regist.
+    _pattern.actors = creatureSet;
+    // setFlow.
+    let idSet = [0, 2, 4];
+    for(let i = 0; i < 3; i++){ creatureSet[i].setFlow(flowSet[idSet[i]]); }
+    // activate.
+    activateAll(creatureSet);
   }
 }
 
