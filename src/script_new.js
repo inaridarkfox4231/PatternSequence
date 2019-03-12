@@ -33,8 +33,8 @@ const CREATURE = 0; // アクター生成用
 const BULLET = 1;
 
 // やってみるかー
-const PATTERN_NUM = 3; // パターン増やすときはここを変えてね。
-const INITIAL_PATTERN_INDEX = 2; // 最初に現れるパターン。調べたいパターンを先に見たいときにどうぞ。
+const PATTERN_NUM = 7; // パターン増やすときはここを変えてね。
+const INITIAL_PATTERN_INDEX = 6; // 最初に現れるパターン。調べたいパターンを先に見たいときにどうぞ。
 
 function setup(){
   myCanvas = createCanvas(640, 480);
@@ -230,7 +230,7 @@ class delayHub extends flow{
   }
   update(){
     if(frameCount % this.interval === 0){ this.open = true; }
-    this.open = false;
+    else{ this.open = false; }
   }
 }
 
@@ -257,6 +257,7 @@ class randomDelayHub extends delayHub{
 // 位置をセットするだけのハブ
 class setPosHub extends flow{
   constructor(x, y){
+    super();
     this.x = x;
     this.y = y;
     this.initialState = ACT;
@@ -270,6 +271,7 @@ class setPosHub extends flow{
 // 速度をセットするだけのハブ
 class setVelocityHub extends flow{
   constructor(vx, vy){
+    super();
     this.vx = vx;
     this.vy = vy;
     this.initialState = ACT;
@@ -280,14 +282,35 @@ class setVelocityHub extends flow{
   }
 }
 
+// n_wayHubの移植。
+// イメージ的にはmainAngleの方向にnWayGunみたいにして(2n+1)個の速度を順繰りに与えるんだけど、
+// その方向にほんとうにnWayShotを撃ちたいのであればmatrixFlowを工夫する必要がある。
+// 具体的には行列を然るべき対称行列で与える必要がある。それはmainAngleをθとして、
+// [α(cosθ)^2 + β(sinθ)^2, (α-β)cosθsinθ, (α-β)cosθsinθ, α(sinθ)^2 + β(cosθ)^2]ですね。
+// これは関数作って成分を出せるようにしましょう。
+class n_wayHub extends flow{
+  constructor(speed, mainAngle, diffAngle, n){
+    super();
+    this.directionArray = [];
+    let diffVector = createVector(-sin(mainAngle), cos(mainAngle)).mult(speed * tan(diffAngle));
+    for(let i = -n; i <= n; i++){
+      this.directionArray.push(createVector(speed * cos(mainAngle) + i * diffVector.x, speed * sin(mainAngle) + i * diffVector.y));
+    }
+    this.currentIndex = 0;
+    this.initialState = ACT;
+  }
+  execute(_bullet){
+    _bullet.setVelocity(this.directionArray[this.currentIndex]);
+    this.currentIndex = (this.currentIndex + 1) % this.directionArray.length;
+    this.convert(_bullet);
+  }
+}
+
 // 行列フロー
 class matrixArrow extends flow{
-  constructor(a, b, c, d, spanTime){
+  constructor(a, b, c, d, spanTime = 60){
     super();
-    this.a = a;
-    this.b = b;
-    this.c = c;
-    this.d = d;
+    this.elem =  [a, b, c, d];
     this.spanTime = spanTime;
     this.initialState = PRE;
   }
@@ -296,13 +319,15 @@ class matrixArrow extends flow{
     _bullet.timer.step();
     let vx = _bullet.velocity.x;
     let vy = _bullet.velocity.y;
-    _bullet.setVelocity(this.a * vx + this.b * vy, this.c * vx + this.d * vy);
+    _bullet.setVelocity(this.elem[0] * vx + this.elem[1] * vy, this.elem[2] * vx + this.elem[3] * vy);
     _bullet.pos.add(_bullet.velocity);
     if(_bullet.timer.getCnt() === this.spanTime){ this.convert(_bullet); }
+    // 画面外に出た場合も終了とする
+    if(_bullet.pos.x < 0 || _bullet.pos.x > width || _bullet.pos.y < 0 || _bullet.pos.y > height){
+      this.convert(_bullet);
+    }
   }
 }
-
-// n_wayはmatrixかませて継続型のflowとして書いた方がいろんな方向に射出できるからいいと思う
 
 // ----------------------------------------------------------------------------------------------- //
 // actor.
@@ -686,24 +711,77 @@ function createPattern(index, _pattern){
     // activate.
     activateAll(creatureSet);
   }else if(index === 3){
-    // bullet使うー
+    // bullet使うー. まずはrandomDelayで乱れ撃ち
     // シナリオとしてはまず位置を設定してランダムディレイで解放しつつマトリックスで直線的にぎゅーんでそのあと戻す
     // 背景
     _pattern.bgLayer.background(40, 30, 100);
     // 3つのflow.
     let flowSet = [];
     flowSet.push(new setPosHub(20, 240));
-    flowSet.push(new randomDelayHub(5, 3, 6, -PI / 3, PI / 3));
-    flowSet.push(new matrixArrow(1, 0, 0, 1, 360));
+    flowSet.push(new randomDelayHub(3, 12, 12, -3 * PI / 7, 3 * PI / 7));
+    flowSet.push(new matrixArrow(1.01, 0, 0, 0.95, 240));
     // active指定
     _pattern.activeFlow.push(flowSet[1]);
     // connect.
     connectFlows(flowSet, [0, 1, 2], [1, 2, 0]);
-    // bullet.
-    let bullets = getCreatures([0, 1, 2], [0, 0, 0]);
+    // bullet. (BULLETオプションでbulletを手に入れる)
+    let bullets = getCreatures(multiSeq(arSeq(0, 1, 4), 3), constSeq(0, 49), BULLET);
     // regist.
+    _pattern.actors = bullets;
     // setFlow.
+    bullets.forEach(function(b){ b.setFlow(flowSet[0]); })
     // activate.
+    activateAll(bullets);
+  }else if(index === 4){
+    // waitingはきちんと機能しています。オッケー。
+    _pattern.bgLayer.background(45, 30, 100);
+    let vecs = getVector([100, 200, 200, 100], [100, 100, 200, 200]);
+    let flowSet = getConstantFlows(vecs, [0, 1, 2, 3], [1, 2, 3, 0], [50, 40, 60, 70]);
+    flowSet.push(new waiting(60));
+    renderFlows(_pattern.bgLayer, flowSet);
+    connectFlows(flowSet, [0, 1, 2, 3, 4], [1, 2, 3, 4, 0]);
+    // waitingをかませて60フレーム止まらせる
+    let creatures = getCreatures([0, 1, 2], [0, 0, 0]);
+    _pattern.actors = creatures;
+    for(let i = 0; i < 3; i++){ creatures[i].setFlow(flowSet[i]); }
+    activateAll(creatures);
+  }else if(index === 5){
+    // 回転matrixFlow使ってみたいんだけど
+    _pattern.bgLayer.background(75, 40, 100);
+    let flowSet = [];
+    flowSet.push(new setPosHub(320, 240));
+    flowSet.push(new delayHub(10));
+    flowSet.push(new setVelocityHub(1, 0));
+    flowSet.push(new matrixArrow(1.01 * cos(PI / 60), -1.01 * sin(PI / 60), 1.01 * sin(PI / 60), 1.01 * cos(PI / 60), 480));
+    _pattern.activeFlow.push(flowSet[1]);
+    connectFlows(flowSet, [0, 1, 2, 3], [1, 2, 3, 0]);
+    let bullets = getCreatures(multiSeq(arSeq(0, 1, 7), 4), constSeq(0, 28), BULLET);
+    _pattern.actors = bullets;
+    bullets.forEach(function(b){ b.setFlow(flowSet[0]); })
+    activateAll(bullets);
+    // らせんぐーるぐーる(？？)
+  }else if(index === 6){
+    // nWayGun使ってみたいんだけど
+    // すげぇ。ほんとに斜めになった。斜めの7WayGunだ。名付けてレインボーガン（？）
+    _pattern.bgLayer.background(0, 0, 30);
+    let flowSet = [];
+    flowSet.push(new setPosHub(60, 120));
+    flowSet.push(new assembleHub(21)); // とりあえず21で。
+    // 下方30°の方向に発射する
+    flowSet.push(new n_wayHub(10, PI / 6, PI / 8, 10));
+    // その方向に1.01倍、垂直な方向に0.8倍。これでnWayGunになるはず。
+    let elem = getSym(1.01, 0.8, PI / 6);
+    flowSet.push(new matrixArrow(elem[0], elem[1], elem[2], elem[3], 120));
+    _pattern.activeFlow.push(flowSet[1]);
+    connectFlows(flowSet, [0, 1, 2, 3], [1, 2, 3, 0]);
+    let bullets = getCreatures(multiSeq(arSeq(0, 1, 7), 3), constSeq(0, 21), BULLET);
+    _pattern.actors = bullets;
+    bullets.forEach(function(b){ b.setFlow(flowSet[0]); })
+    activateAll(bullets);
+    // 完璧だ・・・・・
+  }else if(index === 7){
+    // とりあえずもうちょっと、あと散開弾と、あと中央まで来てばばばばって各方面にとんでくのやりたい（？）
+    // ついでにwaveShot, 波打つようにマシンガンみたいなの作ってよ（注文が雑）
   }
 }
 
@@ -847,4 +925,14 @@ function getVector(posX, posY){
     vecs.push(createVector(posX[i], posY[i]));
   }
   return vecs;
+}
+
+// mainAngle方向にa倍、それと直交する方向にb倍する行列の成分を手に入れる。
+function getSym(a, b, theta){
+  let elem = [];
+  elem[0] = a * pow(cos(theta), 2) + b * pow(sin(theta), 2);
+  elem[1] = (a - b) * cos(theta) * sin(theta);
+  elem[2] = elem[1];
+  elem[3] = a * pow(sin(theta), 2) + b * pow(cos(theta), 2);
+  return elem;
 }
