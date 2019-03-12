@@ -29,6 +29,9 @@ const ACT = 2;
 const ROLLING = 0;  // figureの描画モード、回転
 const ORIENTED = 1; // figureの描画モード、指向
 
+const CREATURE = 0; // アクター生成用
+const BULLET = 1;
+
 // やってみるかー
 const PATTERN_NUM = 3; // パターン増やすときはここを変えてね。
 const INITIAL_PATTERN_INDEX = 2; // 最初に現れるパターン。調べたいパターンを先に見たいときにどうぞ。
@@ -98,15 +101,17 @@ class counter{
     this.cnt += diff;
   }
 }
+// ----------------------------------------------------------------------------------------------- //
+// flow.
 
 // flowは単に処理を書くだけ。つなげることで様々な事を実現する。
+// initializeはない場合もあるので省いたよ
 class flow{
   constructor(){
     this.convertList = [];
     this.initialState = PRE; // 基本PRE, 内容が単純ならばACTでOK.
   }
   addFlow(_flow){ this.convertList.push(_flow); }
-  initialize(_actor){} // initializeは普通にあるよ
   execute(_actor){ this.convert(_actor); } // デフォルトはconvertだけ（initializeはオプション）
   convert(_actor){
     // デフォルトはランダムコンバート、undefinedがセットされた場合の処理はactorに書く。
@@ -123,7 +128,7 @@ class flow{
 // たとえばwaitも、60ならきっかり60フレーム消費にしたいよね。
 // 単なるハブはすべて1フレーム処理にしたい。
 
-// コンスタンスフローくらいは作ろう。fromからtoへspanフレームで移動.
+// コンスタントフローくらいは作ろう。fromからtoへspanフレームで移動.
 // 目的はこれにきっかりspanフレームしかかからないようにすること。
 // なおcreatureは今までのmovingActorである。カウンター持ってるの。
 class constantFlow extends flow{
@@ -198,6 +203,110 @@ class rotaryHub extends flow{
   } // これだけ。convertするだけのハブは文字通りコンバートを実行しておしまい。簡単だ・・
 }
 
+// 指定フレーム待つだけ
+class waiting extends flow{
+  constructor(spanTime){
+    super();
+    this.spanTime = spanTime;
+    this.initialState = PRE;
+  }
+  execute(_creature){
+    if(_creature.state === PRE){ _creature.timer.setting(this.spanTime); _creature.setState(ACT); }
+    _creature.timer.step();
+    if(_creature.timer.getCnt() === this.spanTime){ this.convert(_creature); }
+  }
+}
+
+// ディレイハブ。更新があるのでactiveFlowに入れるの忘れずに。
+class delayHub extends flow{
+  constructor(interval){
+    super();
+    this.interval = interval; // 正の数にしないとzero-Division-Errorになっちゃう
+    this.open = false;
+    this.initialState = ACT;
+  }
+  execute(_actor){
+    if(this.open){ this.convert(_actor); this.open = false; } // 1体ずつ放す
+  }
+  update(){
+    if(frameCount % this.interval === 0){ this.open = true; }
+    this.open = false;
+  }
+}
+
+// 速度について角度phi1～phi2, 大きさr1～r2を与えて解放する
+class randomDelayHub extends delayHub{
+  constructor(interval, r1, r2, phi1, phi2){
+    super(interval);
+    this.r1 = r1;
+    this.r2 = r2; // r1 < r2.
+    this.phi1 = phi1;
+    this.phi2 = phi2; // phi1 < phi2で、この間で大きさrの速度を与える
+  }
+  execute(_bullet){
+    if(this.open){
+      let r = this.r1 + random(this.r2 - this.r1);
+      let phi = this.phi1 + random(this.phi2 - this.phi1);
+      _bullet.setVelocity(r * cos(phi), r * sin(phi));
+      this.convert(_bullet)
+      this.open = false;
+    } // 1体通したら閉じる
+  }
+}
+
+// 位置をセットするだけのハブ
+class setPosHub extends flow{
+  constructor(x, y){
+    this.x = x;
+    this.y = y;
+    this.initialState = ACT;
+  }
+  execute(_creature){
+    _creature.setPos(this.x, this.y);
+    this.convert(_creature);
+  }
+}
+
+// 速度をセットするだけのハブ
+class setVelocityHub extends flow{
+  constructor(vx, vy){
+    this.vx = vx;
+    this.vy = vy;
+    this.initialState = ACT;
+  }
+  execute(_bullet){
+    _bullet.setVelocity(this.vx, this.vy);
+    this.convert(_bullet);
+  }
+}
+
+// 行列フロー
+class matrixArrow extends flow{
+  constructor(a, b, c, d, spanTime){
+    super();
+    this.a = a;
+    this.b = b;
+    this.c = c;
+    this.d = d;
+    this.spanTime = spanTime;
+    this.initialState = PRE;
+  }
+  execute(_bullet){
+    if(_bullet.state === PRE){ _bullet.timer.setting(this.spanTime); _bullet.setState(ACT); }
+    _bullet.timer.step();
+    let vx = _bullet.velocity.x;
+    let vy = _bullet.velocity.y;
+    _bullet.setVelocity(this.a * vx + this.b * vy, this.c * vx + this.d * vy);
+    _bullet.pos.add(_bullet.velocity);
+    if(_bullet.timer.getCnt() === this.spanTime){ this.convert(_bullet); }
+  }
+}
+
+// n_wayはmatrixかませて継続型のflowとして書いた方がいろんな方向に射出できるからいいと思う
+
+// ----------------------------------------------------------------------------------------------- //
+// actor.
+
 // timerは必ずしも必要ではないということで。キー入力がトリガーの場合とか。
 class actor{
   constructor(){
@@ -239,6 +348,18 @@ class creature extends actor{
     this.visual.render(gr, this.pos); // 自分の位置に表示
   }
 }
+
+// bulletは速度により位置を更新します
+class bullet extends creature{
+  constructor(colorId = 0, figureId = 0){
+    super(colorId, figureId);
+    this.velocity = createVector(0, 0);
+  }
+  setVelocity(vx, vy){
+    this.velocity.set(vx, vy);
+  }
+}
+// 速度を使って位置を更新する命令は基本的にflow側に書きます。
 
 // ビジュアル担当
 class figure{
@@ -336,10 +457,9 @@ class figure{
   }
 }
 
-// bulletも早く実装し直してください
-
 // renderの時に回転させるのか、それとも速度ベクトルを90°反対方向に回して描画するのかとかそういうの。
 
+// ----------------------------------------------------------------------------------------------- //
 // entity, pattern, pauseを作る。
 // entityのin_progressActionとcompletedActionはもうない・・executeにちゃんと書く。
 class entity extends actor{
@@ -355,6 +475,9 @@ class entity extends actor{
 // completedActionに書いてたやつ、convertはflowの方で、初期stateもflowに書いてある、
 // もしflagResetしたいならグローバルでしょ？flowでやればいいじゃん。以上。
 // もちろんこっちでやってもいいんだけど一般的じゃないしね・・
+
+// ----------------------------------------------------------------------------------------------- //
+// パターンとポーズだけ。
 
 class pattern extends flow{
   constructor(patternIndex){
@@ -562,6 +685,25 @@ function createPattern(index, _pattern){
     for(let i = 0; i < 3; i++){ creatureSet[i].setFlow(flowSet[idSet[i]]); }
     // activate.
     activateAll(creatureSet);
+  }else if(index === 3){
+    // bullet使うー
+    // シナリオとしてはまず位置を設定してランダムディレイで解放しつつマトリックスで直線的にぎゅーんでそのあと戻す
+    // 背景
+    _pattern.bgLayer.background(40, 30, 100);
+    // 3つのflow.
+    let flowSet = [];
+    flowSet.push(new setPosHub(20, 240));
+    flowSet.push(new randomDelayHub(5, 3, 6, -PI / 3, PI / 3));
+    flowSet.push(new matrixArrow(1, 0, 0, 1, 360));
+    // active指定
+    _pattern.activeFlow.push(flowSet[1]);
+    // connect.
+    connectFlows(flowSet, [0, 1, 2], [1, 2, 0]);
+    // bullet.
+    let bullets = getCreatures([0, 1, 2], [0, 0, 0]);
+    // regist.
+    // setFlow.
+    // activate.
   }
 }
 
@@ -591,10 +733,15 @@ function renderFlows(gr, flowSet){
 }
 
 // まとめてcreatureを手に入れる
-function getCreatures(colorIds, figureIds){
+function getCreatures(colorIds, figureIds, kind = CREATURE){
   let actorSet = [];
   for(let i = 0; i < colorIds.length; i++){
-    let _actor = new creature(colorIds[i], figureIds[i]);
+    let _actor;
+    if(kind === CREATURE){
+      _actor = new creature(colorIds[i], figureIds[i]);
+    }else if(kind === BULLET){
+      _actor = new bullet(colorIds[i], figureIds[i]);
+    }
     actorSet.push(_actor);
   }
   return actorSet;
