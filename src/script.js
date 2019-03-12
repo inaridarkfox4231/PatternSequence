@@ -323,7 +323,7 @@ class matrixArrow extends flow{
     _bullet.pos.add(_bullet.velocity);
     if(_bullet.timer.getCnt() === this.spanTime){ this.convert(_bullet); }
     // 画面外に出た場合も終了とする
-    if(_bullet.pos.x < 0 || _bullet.pos.x > width || _bullet.pos.y < 0 || _bullet.pos.y > height){
+    if(_bullet.pos.x < -40 || _bullet.pos.x > width + 40 || _bullet.pos.y < -40 || _bullet.pos.y > height + 40){
       this.convert(_bullet);
     }
   }
@@ -765,20 +765,27 @@ function createPattern(index, _pattern){
     // すげぇ。ほんとに斜めになった。斜めの7WayGunだ。名付けてレインボーガン（？）
     _pattern.bgLayer.background(0, 0, 30);
     let flowSet = [];
-    flowSet.push(new setPosHub(60, 120));
+    //flowSet.push(new setPosHub(60, 120));
+    // ちょっと工夫したい
+    flowSet.push(new delayHub(10));
+    let vecs = getVector([560, 60, 60], [60, 60, 120]);
+    flowSet.push(new constantFlow(vecs[0], vecs[1], 500));
+    flowSet.push(new constantFlow(vecs[1], vecs[2], 60));
     flowSet.push(new assembleHub(21)); // とりあえず21で。
     // 下方30°の方向に発射する
     flowSet.push(new n_wayHub(10, PI / 6, PI / 8, 10));
     // その方向に1.01倍、垂直な方向に0.8倍。これでnWayGunになるはず。
     let elem = getSym(1.01, 0.8, PI / 6);
     flowSet.push(new matrixArrow(elem[0], elem[1], elem[2], elem[3], 120));
-    _pattern.activeFlow.push(flowSet[1]);
-    connectFlows(flowSet, [0, 1, 2, 3], [1, 2, 3, 0]);
-    let bullets = getCreatures(multiSeq(arSeq(0, 1, 7), 3), constSeq(0, 21), BULLET);
+    _pattern.activeFlow.push(flowSet[0]);
+    _pattern.activeFlow.push(flowSet[3]);
+    connectFlows(flowSet, [0, 1, 2, 3, 4, 5], [1, 2, 3, 4, 5, 0]);
+    let bullets = getCreatures(multiSeq(arSeq(0, 1, 7), 9), constSeq(0, 21), BULLET);
     _pattern.actors = bullets;
-    bullets.forEach(function(b){ b.setFlow(flowSet[0]); })
+    bullets.forEach(function(b){ b.setFlow(flowSet[0]); b.setPos(-100, -100); })
     activateAll(bullets);
     // 完璧だ・・・・・
+    // こら何しやがる
   }else if(index === 7){
     // とりあえずもうちょっと、あと散開弾と、あと中央まで来てばばばばって各方面にとんでくのやりたい（？）
     // ついでにwaveShot, 波打つようにマシンガンみたいなの作ってよ（注文が雑）
