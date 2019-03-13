@@ -504,6 +504,23 @@ class bullet extends creature{
 }
 // 速度を使って位置を更新する命令は基本的にflow側に書きます。
 
+// simpleGun. あくまで実験です。
+// Zキーを押している間、毎フレーム手持ちのbulletでnon-Activeであるどれかを、setFlow-Activateする感じ。
+// あ、ついでにsetPosで自分のposを与えるんだけど。で、十字キーで移動する。renderはシンプルに〇で。
+class simpleGun{
+  constructor(x, y){
+    this.pos = createVector(x, y);
+    this.muzzle = []; // ここにflowを登録するみたい
+    this.currentMuzzleIndex = 0;
+    this.magazine = []; // 弾倉。ここにbulletを格納する。
+  }
+  // muzzleにshotの種類となるflowをregistする関数「registShot」
+  // 弾倉にbulletのsetをregistする関数「registBullet」
+  // updateは十字キーで動かす。あーそうか、毎フレームupdateするん。。ここには書けないな、どうしよ。
+  // 十字キー操作の所だけflow処理にしてこれ自身actor, というかcreatureの継承として書くのもありかもね。
+  // また明日考えよ。
+}
+
 // ビジュアル担当
 class figure{
   constructor(myColor, figureId, visualMode = ROLLING){
