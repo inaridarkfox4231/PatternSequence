@@ -33,8 +33,8 @@ const CREATURE = 0; // アクター生成用
 const BULLET = 1;
 
 // やってみるかー
-const PATTERN_NUM = 10; // パターン増やすときはここを変えてね。
-const INITIAL_PATTERN_INDEX = 6; // 最初に現れるパターン。調べたいパターンを先に見たいときにどうぞ。
+const PATTERN_NUM = 13; // パターン増やすときはここを変えてね。
+const INITIAL_PATTERN_INDEX = 12; // 最初に現れるパターン。調べたいパターンを先に見たいときにどうぞ。
 
 function setup(){
   myCanvas = createCanvas(640, 480);
@@ -246,9 +246,9 @@ class randomDelayHub extends delayHub{
   execute(_bullet){
     if(this.open){
       let r = this.r1 + random(this.r2 - this.r1);
-      let phi = this.phi1 + random(this.phi2 - this.phi1);
-      _bullet.setVelocity(r * cos(phi), r * sin(phi));
-      this.convert(_bullet) // convert.
+      let angle = this.phi1 + random(this.phi2 - this.phi1);
+      _bullet.setVelocity(r * cos(angle), r * sin(angle));
+      this.convert(_bullet);
       this.open = false;
     } // 1体通したら閉じる
   }
@@ -268,9 +268,64 @@ class circularDelayHub extends delayHub{
       let r = this.r1 + random(this.r2 - this.r1);
       _bullet.setVelocity(r * cos(this.angle), r * sin(this.angle));
       this.angle += this.diffAngle;
-      this.convert(_bullet); // convert.
+      this.convert(_bullet);
       this.open = false;
     }
+  }
+}
+
+// 一定の範囲の角度で。
+// mainは0以上, diff, innerは正にしてください。mainからはじまってdiffずつ方向決めて発射、
+// innerだけ進むと折り返します。そんな感じ。
+class wavingDelayHub extends delayHub{
+  constructor(interval, r1, r2, mainAngle, diffAngle, innerAngle){
+    super(interval);
+    this.r1 = r1;
+    this.r2 = r2;
+    this.defaultAngle = mainAngle;
+    this.diff = 0;
+    this.diffAngle = diffAngle;
+    this.innerAngle = innerAngle;
+  }
+  execute(_bullet){
+    if(this.open){
+      let r = this.r1 + random(this.r2 - this.r1);
+      let n = Math.floor(this.diff / this.innerAngle);
+      let angle;
+      if(n % 2 === 0){
+        angle = this.defaultAngle + (this.diff % this.innerAngle);
+      }else{
+        angle = this.defaultAngle + this.innerAngle - (this.diff % this.innerAngle);
+      }
+      _bullet.setVelocity(r * cos(angle), r * sin(angle));
+      this.diff += this.diffAngle;
+      this.convert(_bullet);
+      this.open = false;
+    }
+  }
+}
+
+// homing式のdelayHub. delayのままある特定の対象に向けて方向を定める
+class homingDelayHub extends delayHub{
+  constructor(interval, r1, r2, targetX, targetY){
+    super(interval);
+    this.r1 = r1;
+    this.r2 = r2;
+    this.targetX = targetX;
+    this.targetY = targetY;
+  }
+  execute(_bullet){
+    if(this.open){
+      let angle = atan2(this.targetY - _bullet.pos.y, this.targetX - _bullet.pos.x);
+      let r = this.r1 + random(this.r2 - this.r1);
+      _bullet.setVelocity(r * cos(angle), r * sin(angle));
+      this.convert(_bullet);
+      this.open = false;
+    }
+  }
+  setTarget(newTargetX, newTargetY){
+    this.targetX = newTargetX;
+    this.targetY = newTargetY;
   }
 }
 
@@ -299,6 +354,19 @@ class setVelocityHub extends flow{
   execute(_bullet){
     _bullet.setVelocity(this.vx, this.vy);
     this.convert(_bullet);
+  }
+}
+
+// figureModeをチェンジするだけ
+class modeChangeHub extends flow{
+  constructor(newMode){
+    super();
+    this.mode = newMode;
+    this.initialState = ACT;
+  }
+  execute(_creature){
+    _creature.visual.setVisualMode(this.mode);
+    this.convert(_creature);
   }
 }
 
@@ -429,6 +497,10 @@ class bullet extends creature{
   setVelocity(vx, vy){
     this.velocity.set(vx, vy);
   }
+  render(gr){
+    // rendering関数の上書き。ORIENTEDモードに対応するため。
+    this.visual.render(gr, this.pos, this.velocity);
+  }
 }
 // 速度を使って位置を更新する命令は基本的にflow側に書きます。
 
@@ -516,13 +588,14 @@ class figure{
   }
   setVisualMode(newMode){
     this.mode = newMode; // とりあえずROLLINGとORIENTEDしか思いつかない
+    this.rotation = 0; // ローテーションリセット
   }
   rotate(gr, dir = undefined){
     if(this.mode === ROLLING){ // 回転する
       this.rotation += 0.1;
       gr.rotate(this.rotation);
-    }else if(this.mode = ORIENTED){ // 速度の方向に合わせる
-      this.rotation = dir - (PI / 2);
+    }else if(this.mode === ORIENTED){ // 速度の方向に合わせる
+      this.rotation = dir.heading() - (PI / 2);
       gr.rotate(this.rotation);
     }
   }
@@ -884,6 +957,71 @@ function createPattern(index, _pattern){
     _pattern.activeFlow.push(flowSet[4]);
     connectFlows(flowSet, [0, 1, 2, 3, 4, 5], [1, 2, 3, 4, 5, 0]);
     let bullets = getCreatures(multiSeq(arSeq(0, 1, 5), 20), constSeq(1, 100), BULLET);
+    _pattern.actors = bullets;
+    bullets.forEach(function(b){ b.setFlow(flowSet[0]); })
+    activateAll(bullets);
+  }else if(index === 10){
+    // wavingDelayHubの実験
+    // すげぇ
+    _pattern.bgLayer.background(30, 50, 100);
+    let flowSet = [];
+    flowSet.push(new setPosHub(20, 240));
+    flowSet.push(new wavingDelayHub(2, 4, 6, -PI / 3, PI / 60, 2 * PI / 3));
+    flowSet.push(new matrixArrow(1.05, 0, 0, 0.98, 240));
+    _pattern.activeFlow.push(flowSet[1]);
+    connectFlows(flowSet, [0, 1, 2], [1, 2, 0]);
+    let bullets = getCreatures(multiSeq(arSeq(0, 1, 7), 3), constSeq(1, 21), BULLET);
+    _pattern.actors = bullets;
+    bullets.forEach(function(b){ b.setFlow(flowSet[0]); })
+    activateAll(bullets);
+  }else if(index === 11){
+    // ひし形でモードチェンジ
+    // とりあえず直進して、ばばばっと円形に放射してアセンブルさせたのち（36発くらい）
+    // delayで特定の方向にばーっととんでいく感じですかね。
+    // victimが必要ですねぇ。どうしましょう。
+    _pattern.bgLayer.background(40, 60, 100);
+    let flowSet = [];
+    flowSet.push(new setPosHub(20, 240));
+    flowSet.push(new assembleHub(36));
+    flowSet.push(new setVelocityHub(2, 0));
+    flowSet.push(new matrixArrow(1.1, 0, 0, 1.1, 25));
+    flowSet.push(new circularDelayHub(2, 5, 5, 0, PI / 18));
+    flowSet.push(new matrixArrow(1.02, 0, 0, 1.02, 10));
+    flowSet.push(new assembleHub(36));
+    flowSet.push(new homingDelayHub(3, 3, 5, 600, 400));
+    flowSet.push(new modeChangeHub(ORIENTED));
+    flowSet.push(new matrixArrow(1.05, 0, 0, 1.05, 240));
+    flowSet.push(new modeChangeHub(ROLLING));
+    _pattern.activeFlow.push(flowSet[1]);
+    _pattern.activeFlow.push(flowSet[4]);
+    _pattern.activeFlow.push(flowSet[6]);
+    _pattern.activeFlow.push(flowSet[7]);
+    connectFlows(flowSet, arSeq(0, 1, 11), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0]);
+    let bullets = getCreatures(multiSeq(arSeq(0, 1, 6), 6), constSeq(3, 36), BULLET);
+    _pattern.actors = bullets;
+    bullets.forEach(function(b){ b.setFlow(flowSet[0]); })
+    activateAll(bullets);
+  }else if(index === 12){
+    // 3つに分かれてから行ってみる
+    _pattern.bgLayer.background(90, 40, 100);
+    let flowSet = [];
+    flowSet.push(new setPosHub(20, 240));
+    flowSet.push(new assembleHub(108));
+    flowSet.push(new arcHub(5, -PI / 3, PI / 3, 3, 1));
+    flowSet.push(new matrixArrow(1.02, 0, 0, 1.02, 20));
+    flowSet.push(new circularDelayHub(1, 5, 5, 0, PI / 54));
+    flowSet.push(new matrixArrow(1.01, 0, 0, 1.01, 15));
+    flowSet.push(new assembleHub(108))
+    flowSet.push(new homingDelayHub(3, 5, 5, 600, 50));
+    flowSet.push(new modeChangeHub(ORIENTED));
+    flowSet.push(new matrixArrow(1.1, 0, 0, 1.1, 240));
+    flowSet.push(new modeChangeHub(ROLLING));
+    _pattern.activeFlow.push(flowSet[1]);
+    _pattern.activeFlow.push(flowSet[4]);
+    _pattern.activeFlow.push(flowSet[6]);
+    _pattern.activeFlow.push(flowSet[7]);
+    connectFlows(flowSet, arSeq(0, 1, 11), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0]);
+    let bullets = getCreatures(multiSeq(arSeq(0, 1, 6), 18), constSeq(3, 108), BULLET);
     _pattern.actors = bullets;
     bullets.forEach(function(b){ b.setFlow(flowSet[0]); })
     activateAll(bullets);
