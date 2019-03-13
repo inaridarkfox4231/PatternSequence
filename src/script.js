@@ -33,7 +33,7 @@ const CREATURE = 0; // アクター生成用
 const BULLET = 1;
 
 // やってみるかー
-const PATTERN_NUM = 7; // パターン増やすときはここを変えてね。
+const PATTERN_NUM = 10; // パターン増やすときはここを変えてね。
 const INITIAL_PATTERN_INDEX = 6; // 最初に現れるパターン。調べたいパターンを先に見たいときにどうぞ。
 
 function setup(){
@@ -248,9 +248,29 @@ class randomDelayHub extends delayHub{
       let r = this.r1 + random(this.r2 - this.r1);
       let phi = this.phi1 + random(this.phi2 - this.phi1);
       _bullet.setVelocity(r * cos(phi), r * sin(phi));
-      this.convert(_bullet)
+      this.convert(_bullet) // convert.
       this.open = false;
     } // 1体通したら閉じる
+  }
+}
+
+// 打ち出す方向が等間隔で変わっていくdelayHub.
+class circularDelayHub extends delayHub{
+  constructor(interval, r1, r2, mainAngle, diffAngle){
+    super(interval);
+    this.r1 = r1;
+    this.r2 = r2;
+    this.angle = mainAngle; // 初期射出角度
+    this.diffAngle = diffAngle; // 差分（正か負か）
+  }
+  execute(_bullet){
+    if(this.open){
+      let r = this.r1 + random(this.r2 - this.r1);
+      _bullet.setVelocity(r * cos(this.angle), r * sin(this.angle));
+      this.angle += this.diffAngle;
+      this.convert(_bullet); // convert.
+      this.open = false;
+    }
   }
 }
 
@@ -300,7 +320,33 @@ class n_wayHub extends flow{
     this.initialState = ACT;
   }
   execute(_bullet){
-    _bullet.setVelocity(this.directionArray[this.currentIndex]);
+    let v = this.directionArray[this.currentIndex];
+    _bullet.setVelocity(v.x, v.y);
+    this.currentIndex = (this.currentIndex + 1) % this.directionArray.length;
+    this.convert(_bullet);
+  }
+}
+
+// arcHub. 文字通り弧を描く。mainAngleから始まってdiffずつn個
+// diffAngleを2 * PI / n にすれば円になる
+// リボルバーでクラス作るかな・・んー。
+// multipleを指定しないと散開弾にならない
+class arcHub extends flow{
+  constructor(speed, mainAngle, diffAngle, n, multiple = 1){
+    super();
+    this.directionArray = [];
+    for(let i = 0; i < n; i++){
+      let angle = mainAngle + i * diffAngle;
+      for(let j = 0; j < multiple; j++){
+        this.directionArray.push(createVector(speed * cos(angle), speed * sin(angle)));
+      }
+    }
+    this.currentIndex = 0;
+    this.initialState = ACT;
+  }
+  execute(_bullet){
+    let v = this.directionArray[this.currentIndex];
+    _bullet.setVelocity(v.x, v.y);
     this.currentIndex = (this.currentIndex + 1) % this.directionArray.length;
     this.convert(_bullet);
   }
@@ -769,8 +815,8 @@ function createPattern(index, _pattern){
     // ちょっと工夫したい
     flowSet.push(new delayHub(10));
     let vecs = getVector([560, 60, 60], [60, 60, 120]);
-    flowSet.push(new constantFlow(vecs[0], vecs[1], 500));
-    flowSet.push(new constantFlow(vecs[1], vecs[2], 60));
+    flowSet.push(new constantFlow(vecs[0], vecs[1], 125));
+    flowSet.push(new constantFlow(vecs[1], vecs[2], 15));
     flowSet.push(new assembleHub(21)); // とりあえず21で。
     // 下方30°の方向に発射する
     flowSet.push(new n_wayHub(10, PI / 6, PI / 8, 10));
@@ -787,10 +833,64 @@ function createPattern(index, _pattern){
     // 完璧だ・・・・・
     // こら何しやがる
   }else if(index === 7){
-    // とりあえずもうちょっと、あと散開弾と、あと中央まで来てばばばばって各方面にとんでくのやりたい（？）
-    // ついでにwaveShot, 波打つようにマシンガンみたいなの作ってよ（注文が雑）
+    // arcHubの確認
+    _pattern.bgLayer.background(95, 25, 100);
+    let flowSet = [];
+    // とりあえず5方向で
+    flowSet.push(new setPosHub(20, 240));
+    flowSet.push(new assembleHub(25));
+    flowSet.push(new setVelocityHub(5, 0));
+    flowSet.push(new matrixArrow(1.05, 0, 0, 1.05, 25));
+    flowSet.push(new arcHub(5, 0, 2 * PI / 5, 5, 1));
+    flowSet.push(new matrixArrow(1.05, 0, 0, 1.05, 10));
+    flowSet.push(new arcHub(5, 0, 2 * PI / 5, 5, 5));
+    flowSet.push(new matrixArrow(1.02, 0, 0, 1.02, 240));
+    _pattern.activeFlow.push(flowSet[1]);
+    connectFlows(flowSet, [0, 1, 2, 3, 4, 5, 6, 7], [1, 2, 3, 4, 5, 6 ,7, 0]);
+    let bullets = getCreatures(multiSeq(arSeq(0, 1, 5), 5), constSeq(1, 21), BULLET);
+    _pattern.actors = bullets;
+    bullets.forEach(function(b){ b.setFlow(flowSet[0]); })
+    activateAll(bullets);
+  }else if(index === 8){
+    // circularDelayHubの実験（中央付近までとんでいってばばばばっ（？））
+    _pattern.bgLayer.background(60, 40, 100);
+    let flowSet = [];
+    flowSet.push(new setPosHub(20, 240));
+    flowSet.push(new assembleHub(60));
+    flowSet.push(new setVelocityHub(20, 0));
+    flowSet.push(new matrixArrow(0.99, 0, 0, 0.99, 20));
+    flowSet.push(new circularDelayHub(5, 5, 5, 0, PI / 30));
+    flowSet.push(new matrixArrow(1.01, 0, 0, 1.01, 240));
+    _pattern.activeFlow.push(flowSet[1]);
+    _pattern.activeFlow.push(flowSet[4]);
+    connectFlows(flowSet, [0, 1, 2, 3, 4, 5], [1, 2, 3, 4, 5, 0]);
+    let bullets = getCreatures(multiSeq(arSeq(0, 1, 6), 10), constSeq(1, 60), BULLET);
+    _pattern.actors = bullets;
+    bullets.forEach(function(b){ b.setFlow(flowSet[0]); })
+    activateAll(bullets);
+  }else if(index === 9){
+    // 5方向に射出してからばばばばっ
+    // まずarcHubで5方向、順繰りに1つずつ計100個。で、20個をcurcularDelayでPI / 50の間隔で発射。
+    // 若干処理落ち感・・難しい
+    _pattern.bgLayer.background(70, 30, 100);
+    let flowSet = [];
+    flowSet.push(new setPosHub(320, 240));
+    flowSet.push(new assembleHub(100));
+    flowSet.push(new arcHub(20, 0, 2 * PI / 5, 5, 1));
+    flowSet.push(new matrixArrow(0.9, 0, 0, 0.9, 20));
+    flowSet.push(new circularDelayHub(1, 6, 6, 0, PI / 50));
+    flowSet.push(new matrixArrow(1.01, 0, 0, 1.01, 240));
+    _pattern.activeFlow.push(flowSet[1]);
+    _pattern.activeFlow.push(flowSet[4]);
+    connectFlows(flowSet, [0, 1, 2, 3, 4, 5], [1, 2, 3, 4, 5, 0]);
+    let bullets = getCreatures(multiSeq(arSeq(0, 1, 5), 20), constSeq(1, 100), BULLET);
+    _pattern.actors = bullets;
+    bullets.forEach(function(b){ b.setFlow(flowSet[0]); })
+    activateAll(bullets);
   }
 }
+// インタラクションのイメージ
+// キー入力で上下左右に移動、Qボタンでガンの切り替え、Zボタンで発射。
 
 // ----------------------------------------------------------------------------------------------- //
 // パターン生成用の汎用関数
