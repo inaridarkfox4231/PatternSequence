@@ -20,6 +20,7 @@ let all;
 let hueSet = [];
 let clickPosX;
 let clickPosY;
+let keyFlag;
 let myCanvas;
 
 const IDLE = 0;
@@ -33,8 +34,8 @@ const CREATURE = 0; // アクター生成用
 const BULLET = 1;
 
 // やってみるかー
-const PATTERN_NUM = 13; // パターン増やすときはここを変えてね。
-const INITIAL_PATTERN_INDEX = 12; // 最初に現れるパターン。調べたいパターンを先に見たいときにどうぞ。
+const PATTERN_NUM = 14; // パターン増やすときはここを変えてね。
+const INITIAL_PATTERN_INDEX = 13; // 最初に現れるパターン。調べたいパターンを先に見たいときにどうぞ。
 
 function setup(){
   myCanvas = createCanvas(640, 480);
@@ -45,6 +46,7 @@ function setup(){
   all.setFlow(initialFlow); // initialFlowをセットする
   clickPosX = -1;
   clickPosY = -1; // クリックするとpos情報が入る
+  keyFlag = 0; // キータイプ情報
   all.activate(); // activate. これですべてが動き出すといいのだけどね。
 }
 
@@ -76,9 +78,13 @@ function mouseClicked(){
   clickPosX = mouseX;
   clickPosY = mouseY;
 }
+function keyTyped(){
+  if(key === 'q'){ keyFlag |= 1; } // とりあえずQを登録。
+}
 function flagReset(){
   clickPosX = -1;
   clickPosY = -1; // リセット
+  keyFlag = 0;
 }
 
 // 簡単なカウンター. resetの名称をsettingにしました。こっちの方がしっくりくるので。
@@ -516,8 +522,8 @@ class simpleBullet extends bullet{
   inActivate(){
     // inActivateを上書きして自動的に再装填されるようにする
     this.isActive = false;
-    this.parent.magazine.push(this);
     this.visual.setVisualMode(ROLLING); // default.
+    this.parent.stock++; // ストック増やしてね
   }
 }
 
@@ -525,7 +531,7 @@ class simpleBullet extends bullet{
 // Zキーを押している間、毎フレーム手持ちのbulletでnon-Activeであるどれかを、setFlow-Activateする感じ。
 // あ、ついでにsetPosで自分のposを与えるんだけど。で、十字キーで移動する。renderはシンプルに〇で。
 class simpleGun extends actor{
-  constructor(x, y){
+  constructor(x, y, bulletSet){
     super();
     this.pos = createVector(x, y);
     // muzzleは辞書の配列。{initialflow:最初のフロー, wait:次に撃つまでの時間, cost:いくつ使うか, figureId, colorId, mode}
@@ -533,12 +539,10 @@ class simpleGun extends actor{
     // 他にもガンによってはターゲットの設定とか入りそうだけど。勝手に決まる？
     this.muzzle = []; // ここにflowを登録するみたい。
     this.currentMuzzleIndex = 0;
-    this.currentShot; // 現在登録してあるshot.
-    this.magazine = []; // 弾倉。ここにbulletを格納する。
+    this.magazine = bulletSet; // 弾倉。ここにbulletを格納する。
+    this.cursor = 0; // non-Activeをどこから調べるかっていう。
     this.wait = 0;
-  }
-  registBullet(bulletSet){
-    this.magazine = bulletSet;
+    this.stock = bulletSet.length; // 弾数
   }
   registShot(shot){
     this.muzzle.push(shot); // shotは辞書。
@@ -546,29 +550,50 @@ class simpleGun extends actor{
   revolve(){
     // shotの内容を変える(1進める)
     this.currentMuzzleIndex = (this.currentMuzzleIndex + 1) % this.muzzle.length;
-    this.currentShot = this.muzzle[this.currentMuzzleIndex];
   }
   fire(){
     if(this.wait > 0){ return; } // 待ち時間に満たない場合
-    let shot = this.currentShot;
+    let shot = this.muzzle[this.currentMuzzleIndex];
     let n = shot['cost'];
-    if(this.magazine.length < n){ return; } // costに相当する弾数が用意されていない場合
+    if(this.stock < n){ return; } // costに相当する弾数が用意されていない場合
     // となるとbullet側が親の(parent)Gunを知っていないといけないからまずいなー
-    for(let i = 0; i < n; i++){
-      let _bullet = this.magazine.pop();
+    this.stock -= n;
+    while(n > 0){
+      if(this.magazine[this.cursor].isActive){ continue; } // activeでないものを探す
+      n--;
+      let _bullet = this.magazine[this.cursor];
+      this.cursor = (this.cursor + 1) % this.magazine.length; // カーソルを進める
       _bullet.visual.figureChange(color(hueSet[shot['colorId']], 100, 100), shot['figureId']);
       _bullet.setFlow(shot['initialFlow']);
+      _bullet.visual.setVisualMode(shot['mode']);
       _bullet.setPos(this.pos.x, this.pos.y);
+      console.log(this.pos);
+      _bullet.registGun(this); // 親を登録
       _bullet.activate(); // used要らない。bullet自身が判断して自分の親のmagazineに戻ればいいだけ。
     }
+    this.stock -= n;
     this.wait = shot['wait']; // waitを設定
   }
+
+  update(){
+    if(!this.isActive){ return; }
+    this.magazine.forEach(function(b){
+      if(b.isActive){ b.update(); } // activeなものだけupdateする
+    })
+    this.currentFlow.execute(this);
+    if(this.wait > 0){ this.wait--; } // waitカウントを減らす
+  }
   render(gr){
+    this.magazine.forEach(function(b){
+      if(b.isActive){ b.render(gr); }
+    })
     gr.push();
-    gr.translate(this.pos.x, this.pos.y);
     gr.noStroke();
-    gr.fill(hueSet[this.currentMuzzleIndex], 100, 100); // shotの内容に応じて色を変える
-    gr.ellipse(this.pos.x, this.pos.y, 30, 30);
+    gr.fill(hueSet[this.currentMuzzleIndex], 50, 100); // shotの内容に応じて色を変える
+    // あと、残数分かりやすく
+    gr.rect(10, 10, 200 * (this.stock / this.magazine.length), 20);
+    gr.translate(this.pos.x, this.pos.y);
+    gr.ellipse(0, 0, 30, 30); // とりあえず、円。
     gr.pop();
   }
   // muzzleにshotの種類となるflowをregistする関数「registShot」
@@ -576,7 +601,14 @@ class simpleGun extends actor{
   // updateは十字キーで動かす。あーそうか、毎フレームupdateするん。。ここには書けないな、どうしよ。
   // 十字キー操作の所だけflow処理にしてこれ自身actor, というかcreatureの継承として書くのもありかもね。
   // また明日考えよ。
+  // waitの値を減らしてない。updateに書くか。executeに書く？
 }
+
+// TODO:
+// まずupdateを上書きしてwaitの値減らすのとbulletの一括アップデートはこっちに書く、
+// それからQボタンはフラグ処理にするけどZの方は連射したいからこのままでいい、
+// あとrender上書きして左上んとこに残数、というか使えるbulletの個数を表示してください以上です～
+// bulletの描画もrenderでactiveなものだけやるようにするとかして工夫。
 
 // simpleGunを操作するためのflow.
 class controlGun extends flow{
@@ -587,13 +619,16 @@ class controlGun extends flow{
   execute(_gun){
     // 上下左右キーで移動、Qでガン入れ替え、Zで発射
     if(keyIsDown(UP_ARROW)){ _gun.pos.y--; }
-    else if(keyIsDown(DOWN_ARROW)){ _gun.pos.y++; }
+    else if(keyIsDown(DOWN_ARROW)){ _gun.pos.y++; console.log(_gun.pos.y); }
+    else if(keyIsDown(RIGHT_ARROW)){ _gun.pos.x++; }
+    else if(keyIsDown(LEFT_ARROW)){ _gun.pos.x--; }
     if(keyIsDown(90)){
       // Zボタン
       _gun.fire();
-    }else if(keyIsDown(81)){
-      // Qボタン
-      _gun.revolve(); // これだと押してる間ずっとだからまずいね。
+    }
+    // Qボタンで切り替え
+    if(keyFlag & 1){
+      _gun.revolve(); flagReset();
     }
     // あとローテーション付けてディレクション変更とかしたいわね
     // もっともまだテストだし、そのうちいろいろ整理するのでね・・
@@ -1127,6 +1162,30 @@ function createPattern(index, _pattern){
     _pattern.actors = bullets;
     bullets.forEach(function(b){ b.setFlow(flowSet[0]); })
     activateAll(bullets);
+  }else if(index === 13){
+    // やってみる？
+    _pattern.bgLayer.background(0, 0, 50);
+    // bulletを作る
+    let _bullets = [];
+    for(let i = 0; i < 100; i++){
+      _bullets.push(new simpleBullet());
+    }
+    let _gun = new simpleGun(320, 240, _bullets);
+    let flowSet = [];
+    flowSet.push(new setVelocityHub(1, 0));
+    flowSet.push(new setVelocityHub(3, 0));
+    flowSet.push(new setVelocityHub(5, 0));
+    flowSet.push(new matrixArrow(1.05, 0, 0, 1.05, 480));
+    flowSet.push(new matrixArrow(1.05, 0, 0, 0.98, 360))
+    flowSet.push(new matrixArrow(1.05, 0, 0, -0.98, 240));
+    connectFlows(flowSet, [0, 1, 2], [3, 4, 5]);
+    _gun.registShot({initialFlow:flowSet[0], wait:10, cost:1, figureId:1, colorId:0, mode:ORIENTED});
+    _gun.registShot({initialFlow:flowSet[1], wait:15, cost:1, figureId:2, colorId:1, mode:ROLLING});
+    _gun.registShot({initialFlow:flowSet[2], wait:20, cost:1, figureId:3, colorId:2, mode:ORIENTED});
+    // というわけでshot追加します。
+    _gun.setFlow(new controlGun());
+    _pattern.actors.push(_gun);
+    activateAll([_gun]);
   }
 }
 // インタラクションのイメージ
