@@ -504,21 +504,102 @@ class bullet extends creature{
 }
 // 速度を使って位置を更新する命令は基本的にflow側に書きます。
 
+// そのうちbulletで同じように書くけど今はこれで。
+class simpleBullet extends bullet{
+  constructor(colorId = 0, figureId = 0){
+    super(colorId, figureId);
+    this.parent; // 親となるsimpleGun.
+  }
+  registGun(newGun){
+    this.parent = newGun;
+  }
+  inActivate(){
+    // inActivateを上書きして自動的に再装填されるようにする
+    this.isActive = false;
+    this.parent.magazine.push(this);
+    this.visual.setVisualMode(ROLLING); // default.
+  }
+}
+
 // simpleGun. あくまで実験です。
 // Zキーを押している間、毎フレーム手持ちのbulletでnon-Activeであるどれかを、setFlow-Activateする感じ。
 // あ、ついでにsetPosで自分のposを与えるんだけど。で、十字キーで移動する。renderはシンプルに〇で。
-class simpleGun{
+class simpleGun extends actor{
   constructor(x, y){
+    super();
     this.pos = createVector(x, y);
-    this.muzzle = []; // ここにflowを登録するみたい
+    // muzzleは辞書の配列。{initialflow:最初のフロー, wait:次に撃つまでの時間, cost:いくつ使うか, figureId, colorId, mode}
+    // modeは要するにROLLINGとか何だっけ・・ORIENTEDとかいうあれ。figureとcolorの情報も入るよね。
+    // 他にもガンによってはターゲットの設定とか入りそうだけど。勝手に決まる？
+    this.muzzle = []; // ここにflowを登録するみたい。
     this.currentMuzzleIndex = 0;
+    this.currentShot; // 現在登録してあるshot.
     this.magazine = []; // 弾倉。ここにbulletを格納する。
+    this.wait = 0;
+  }
+  registBullet(bulletSet){
+    this.magazine = bulletSet;
+  }
+  registShot(shot){
+    this.muzzle.push(shot); // shotは辞書。
+  }
+  revolve(){
+    // shotの内容を変える(1進める)
+    this.currentMuzzleIndex = (this.currentMuzzleIndex + 1) % this.muzzle.length;
+    this.currentShot = this.muzzle[this.currentMuzzleIndex];
+  }
+  fire(){
+    if(this.wait > 0){ return; } // 待ち時間に満たない場合
+    let shot = this.currentShot;
+    let n = shot['cost'];
+    if(this.magazine.length < n){ return; } // costに相当する弾数が用意されていない場合
+    // となるとbullet側が親の(parent)Gunを知っていないといけないからまずいなー
+    for(let i = 0; i < n; i++){
+      let _bullet = this.magazine.pop();
+      _bullet.visual.figureChange(color(hueSet[shot['colorId']], 100, 100), shot['figureId']);
+      _bullet.setFlow(shot['initialFlow']);
+      _bullet.setPos(this.pos.x, this.pos.y);
+      _bullet.activate(); // used要らない。bullet自身が判断して自分の親のmagazineに戻ればいいだけ。
+    }
+    this.wait = shot['wait']; // waitを設定
+  }
+  render(gr){
+    gr.push();
+    gr.translate(this.pos.x, this.pos.y);
+    gr.noStroke();
+    gr.fill(hueSet[this.currentMuzzleIndex], 100, 100); // shotの内容に応じて色を変える
+    gr.ellipse(this.pos.x, this.pos.y, 30, 30);
+    gr.pop();
   }
   // muzzleにshotの種類となるflowをregistする関数「registShot」
   // 弾倉にbulletのsetをregistする関数「registBullet」
   // updateは十字キーで動かす。あーそうか、毎フレームupdateするん。。ここには書けないな、どうしよ。
   // 十字キー操作の所だけflow処理にしてこれ自身actor, というかcreatureの継承として書くのもありかもね。
   // また明日考えよ。
+}
+
+// simpleGunを操作するためのflow.
+class controlGun extends flow{
+  constructor(){
+    super();
+    this.initialState = ACT;
+  }
+  execute(_gun){
+    // 上下左右キーで移動、Qでガン入れ替え、Zで発射
+    if(keyIsDown(UP_ARROW)){ _gun.pos.y--; }
+    else if(keyIsDown(DOWN_ARROW)){ _gun.pos.y++; }
+    if(keyIsDown(90)){
+      // Zボタン
+      _gun.fire();
+    }else if(keyIsDown(81)){
+      // Qボタン
+      _gun.revolve(); // これだと押してる間ずっとだからまずいね。
+    }
+    // あとローテーション付けてディレクション変更とかしたいわね
+    // もっともまだテストだし、そのうちいろいろ整理するのでね・・
+    // ZとかQならイベントでどうにかできるでしょ。もともとPでポーズやってたわけだし。いけるいける。
+    // まあ、また帰ってからぼちぼちやるさ。
+  }
 }
 
 // ビジュアル担当
@@ -530,6 +611,10 @@ class figure{
     figure.setGraphic(this.graphic, myColor, figureId);
     this.rotation = 0;
     this.mode = visualMode; // デフォルトはローリング。
+  }
+  figureChange(newColor, newFigureId){
+    // 色と形をチェンジ
+    figure.setGraphic(this.graphic, newColor, newFigureId);
   }
   static setGraphic(gr, myColor, figureId){
     // 形のバリエーションは個別のプログラムでやってね
