@@ -280,6 +280,38 @@ class circularDelayHub extends delayHub{
   }
 }
 
+// Gun用に作り替えよう。まあ、そのうち整理するけどね・・・
+// count * intervalだけのタイマーをセットする。limitまでいくとリセット。
+class limitedCircularDelayHub extends flow{
+  constructor(interval, r1, r2, mainAngle, diffAngle, limit = 1){
+    super();
+    this.interval = interval;
+    this.r1 = r1;
+    this.r2 = r2;
+    this.angle = mainAngle;
+    this.diffAngle = diffAngle;
+    this.count = 0;
+    this.limit = limit;
+    this.initialState = PRE;
+  }
+  execute(_bullet){
+    if(_bullet.state === PRE){
+      this.count++;
+      _bullet.timer.setting(this.count * this.interval);
+      if(this.count === this.limit){ this.count = 0; } // カウントリセット
+      // これとは別に速度を決める処理。
+      let r = this.r1 + random(this.r2 - this.r1);
+      _bullet.setVelocity(r * cos(this.angle), r * sin(this.angle));
+      this.angle += this.diffAngle;
+      _bullet.state = ACT;
+    }
+    _bullet.timer.step();
+    if(_bullet.timer.getCnt() === _bullet.timer.limit){
+      this.convert(_bullet);
+    }
+  }
+}
+
 // 一定の範囲の角度で。
 // mainは0以上, diff, innerは正にしてください。mainからはじまってdiffずつ方向決めて発射、
 // innerだけ進むと折り返します。そんな感じ。
@@ -531,9 +563,10 @@ class simpleBullet extends bullet{
 // Zキーを押している間、毎フレーム手持ちのbulletでnon-Activeであるどれかを、setFlow-Activateする感じ。
 // あ、ついでにsetPosで自分のposを与えるんだけど。で、十字キーで移動する。renderはシンプルに〇で。
 class simpleGun extends actor{
-  constructor(x, y, bulletSet){
+  constructor(x, y, bulletSet, speed = 1){
     super();
     this.pos = createVector(x, y);
+    this.speed = speed
     // muzzleは辞書の配列。{initialflow:最初のフロー, wait:次に撃つまでの時間, cost:いくつ使うか, figureId, colorId, mode}
     // modeは要するにROLLINGとか何だっけ・・ORIENTEDとかいうあれ。figureとcolorの情報も入るよね。
     // 他にもガンによってはターゲットの設定とか入りそうだけど。勝手に決まる？
@@ -567,7 +600,6 @@ class simpleGun extends actor{
       _bullet.setFlow(shot['initialFlow']);
       _bullet.visual.setVisualMode(shot['mode']);
       _bullet.setPos(this.pos.x, this.pos.y);
-      console.log(this.pos);
       _bullet.registGun(this); // 親を登録
       _bullet.activate(); // used要らない。bullet自身が判断して自分の親のmagazineに戻ればいいだけ。
     }
@@ -618,10 +650,14 @@ class controlGun extends flow{
   }
   execute(_gun){
     // 上下左右キーで移動、Qでガン入れ替え、Zで発射
-    if(keyIsDown(UP_ARROW)){ _gun.pos.y--; }
-    else if(keyIsDown(DOWN_ARROW)){ _gun.pos.y++; console.log(_gun.pos.y); }
-    else if(keyIsDown(RIGHT_ARROW)){ _gun.pos.x++; }
-    else if(keyIsDown(LEFT_ARROW)){ _gun.pos.x--; }
+    if(keyIsDown(UP_ARROW)){ _gun.pos.y -= _gun.speed; }
+    else if(keyIsDown(DOWN_ARROW)){ _gun.pos.y += _gun.speed; }
+    else if(keyIsDown(RIGHT_ARROW)){ _gun.pos.x += _gun.speed; }
+    else if(keyIsDown(LEFT_ARROW)){ _gun.pos.x -= _gun.speed; }
+    if(_gun.pos.x < 0){ _gun.pos.x = 0; }
+    if(_gun.pos.x > width){ _gun.pos = width; }
+    if(_gun.pos.y < 0){ _gun.pos.y = 0; }
+    if(_gun.pos.y > height){ _gun.pos.y = height; }
     if(keyIsDown(90)){
       // Zボタン
       _gun.fire();
@@ -1170,7 +1206,7 @@ function createPattern(index, _pattern){
     for(let i = 0; i < 100; i++){
       _bullets.push(new simpleBullet());
     }
-    let _gun = new simpleGun(320, 240, _bullets);
+    let _gun = new simpleGun(20, 240, _bullets, 5);
     let flowSet = [];
     flowSet.push(new setVelocityHub(1, 0));
     flowSet.push(new setVelocityHub(3, 0));
@@ -1182,7 +1218,46 @@ function createPattern(index, _pattern){
     _gun.registShot({initialFlow:flowSet[0], wait:10, cost:1, figureId:1, colorId:0, mode:ORIENTED});
     _gun.registShot({initialFlow:flowSet[1], wait:15, cost:1, figureId:2, colorId:1, mode:ROLLING});
     _gun.registShot({initialFlow:flowSet[2], wait:20, cost:1, figureId:3, colorId:2, mode:ORIENTED});
-    // というわけでshot追加します。
+    // というわけでshot追加します。5WayGunいってみよー
+    flowSet.push(new n_wayHub(10, 0, PI / 4, 2));
+    flowSet.push(new matrixArrow(1.01, 0, 0, 0.8, 420));
+    connectFlows(flowSet, [6], [7]);
+    _gun.registShot({initialFlow:flowSet[6], wait:15, cost:5, figureId:3, colorId:3, mode:ORIENTED});
+    // いいですね～、じゃあ20発くらい中央までとんでってから円形にディレイでとんでくのやろう。
+    flowSet.push(new setVelocityHub(10, 0));
+    flowSet.push(new matrixArrow(0.98, 0, 0, 0.98, 30));
+    //flowSet.push(new circularDelayHub(5, 4, 4, 0, PI / 10));
+    flowSet.push(new limitedCircularDelayHub(5, 4, 4, 0, PI / 10, 20));
+    _pattern.activeFlow.push(flowSet[10]);
+    flowSet.push(new matrixArrow(1.01, 0, 0, 1.01, 480));
+    connectFlows(flowSet, [8, 9, 10], [9, 10, 11]);
+    _gun.registShot({initialFlow:flowSet[8], wait:25, cost:20, figureId:4, colorId:4, mode:ROLLING});
+    // 処理が止まってしまった・・・
+    // 共通のハブ使ってるのが問題なんやね。どうしようか。
+    // 順位付けって1フレームの間にやるんでしょ？だったらそのタイミングだけずれてくれれば問題ないよね・・
+    // 総数の概念を与える。assembleのlimitのような。今回の場合だと20. で、5だから、
+    // タイマーで5ずつずらした値をセットしてやればいいと思う。で、20だからそれでリセットする。
+    // うまくいった。
+    // 次に、散開するやつやってみたい
+
+    flowSet.push(new setVelocityHub(5, 0));
+    flowSet.push(new matrixArrow(1.05, 0, 0, 1.05, 25));
+    flowSet.push(new arcHub(5, 0, 2 * PI / 5, 5, 1));
+    flowSet.push(new matrixArrow(1.05, 0, 0, 1.05, 10));
+    flowSet.push(new arcHub(5, 0, 2 * PI / 5, 5, 5));
+    flowSet.push(new matrixArrow(1.02, 0, 0, 1.02, 240));
+    connectFlows(flowSet, [12, 13, 14, 15, 16], [13, 14, 15, 16, 17]);
+    _gun.registShot({initialFlow:flowSet[12], wait:40, cost:25, figureId:5, colorId:5, mode:ROLLING});
+
+    // 次に、・・・え？
+    flowSet.push(new arcHub(20, 0, 2 * PI / 5, 5, 1));
+    flowSet.push(new matrixArrow(0.9, 0, 0, 0.9, 10));
+    flowSet.push(new limitedCircularDelayHub(1, 6, 6, 0, PI / 50, 100));
+    flowSet.push(new matrixArrow(1.01, 0, 0, 1.01, 240));
+    connectFlows(flowSet, [18, 19, 20], [19, 20, 21]);
+    _gun.registShot({initialFlow:flowSet[18], wait:50, cost:100, figureId:6, colorId:6, mode:ORIENTED});
+    // とりあえずテストだしこんなもんでいいや。
+
     _gun.setFlow(new controlGun());
     _pattern.actors.push(_gun);
     activateAll([_gun]);
