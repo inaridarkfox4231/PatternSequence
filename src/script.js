@@ -282,33 +282,53 @@ class circularDelayHub extends delayHub{
 
 // Gun用に作り替えよう。まあ、そのうち整理するけどね・・・
 // count * intervalだけのタイマーをセットする。limitまでいくとリセット。
-class limitedCircularDelayHub extends flow{
-  constructor(interval, r1, r2, mainAngle, diffAngle, limit = 1){
+// すべてのタイマーは1フレームでセットし終わるので毎フレームの更新などは存在しない。
+// これは一度に到達する弾数が限定された状況に特化している。
+class limitedDelayHub extends flow{
+  constructor(interval, limit){
     super();
     this.interval = interval;
-    this.r1 = r1;
-    this.r2 = r2;
-    this.angle = mainAngle;
-    this.diffAngle = diffAngle;
     this.count = 0;
     this.limit = limit;
     this.initialState = PRE;
   }
+  setVelocity(_bullet){} // ここに個別の処理を書く
   execute(_bullet){
     if(_bullet.state === PRE){
       this.count++;
       _bullet.timer.setting(this.count * this.interval);
-      if(this.count === this.limit){ this.count = 0; } // カウントリセット
-      // これとは別に速度を決める処理。
-      let r = this.r1 + random(this.r2 - this.r1);
-      _bullet.setVelocity(r * cos(this.angle), r * sin(this.angle));
-      this.angle += this.diffAngle;
+      if(this.count === this.limit){ this.count = 0; }
+      this.setVelocity(_bullet);
       _bullet.state = ACT;
     }
     _bullet.timer.step();
     if(_bullet.timer.getCnt() === _bullet.timer.limit){
       this.convert(_bullet);
     }
+  }
+}
+
+// 直線的に何発かdelayで発射、いわゆるガトリング
+class limitedLinearDelayHub extends limitedDelayHub{
+  constructor(interval, limit, r1, r2, mainAngle){
+
+  }
+}
+// ウェーブもやりたいね。帰ってから・・いや、今日はすぐ寝るので・・
+
+// 円を描くように発射
+class limitedCircularDelayHub extends limitedDelayHub{
+  constructor(interval, limit, r1, r2, mainAngle, diffAngle){
+    super(interval, limit);
+    this.r1 = r1;
+    this.r2 = r2;
+    this.angle = mainAngle;
+    this.diffAngle = diffAngle;
+  }
+  setVelocity(_bullet){
+    let r = this.r1 + random(this.r2 - this.r1);
+    _bullet.setVelocity(r * cos(this.angle), r * sin(this.angle));
+    this.angle += this.diffAngle;
   }
 }
 
@@ -1212,7 +1232,7 @@ function createPattern(index, _pattern){
     flowSet.push(new setVelocityHub(3, 0));
     flowSet.push(new setVelocityHub(5, 0));
     flowSet.push(new matrixArrow(1.05, 0, 0, 1.05, 480));
-    flowSet.push(new matrixArrow(1.05, 0, 0, 0.98, 360))
+    flowSet.push(new matrixArrow(1.05, 0, 0, 0.98, 360));
     flowSet.push(new matrixArrow(1.05, 0, 0, -0.98, 240));
     connectFlows(flowSet, [0, 1, 2], [3, 4, 5]);
     _gun.registShot({initialFlow:flowSet[0], wait:10, cost:1, figureId:1, colorId:0, mode:ORIENTED});
@@ -1227,7 +1247,7 @@ function createPattern(index, _pattern){
     flowSet.push(new setVelocityHub(10, 0));
     flowSet.push(new matrixArrow(0.98, 0, 0, 0.98, 30));
     //flowSet.push(new circularDelayHub(5, 4, 4, 0, PI / 10));
-    flowSet.push(new limitedCircularDelayHub(5, 4, 4, 0, PI / 10, 20));
+    flowSet.push(new limitedCircularDelayHub(5, 20, 4, 4, 0, PI / 10));
     _pattern.activeFlow.push(flowSet[10]);
     flowSet.push(new matrixArrow(1.01, 0, 0, 1.01, 480));
     connectFlows(flowSet, [8, 9, 10], [9, 10, 11]);
@@ -1252,7 +1272,7 @@ function createPattern(index, _pattern){
     // 次に、・・・え？
     flowSet.push(new arcHub(20, 0, 2 * PI / 5, 5, 1));
     flowSet.push(new matrixArrow(0.9, 0, 0, 0.9, 10));
-    flowSet.push(new limitedCircularDelayHub(1, 6, 6, 0, PI / 50, 100));
+    flowSet.push(new limitedCircularDelayHub(1, 100, 6, 6, 0, PI / 50));
     flowSet.push(new matrixArrow(1.01, 0, 0, 1.01, 240));
     connectFlows(flowSet, [18, 19, 20], [19, 20, 21]);
     _gun.registShot({initialFlow:flowSet[18], wait:50, cost:100, figureId:6, colorId:6, mode:ORIENTED});
