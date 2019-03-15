@@ -311,9 +311,17 @@ class limitedDelayHub extends flow{
 // 直線的に何発かdelayで発射、いわゆるガトリング
 class limitedLinearDelayHub extends limitedDelayHub{
   constructor(interval, limit, r1, r2, mainAngle){
-
+    super(interval, limit);
+    this.r1 = r1;
+    this.r2 = r2;
+    this.angle = mainAngle;
+  }
+  setVelocity(_bullet){
+    let r = this.r1 + random(this.r2 - this.r1);
+    _bullet.setVelocity(r * cos(this.angle), r * sin(this.angle));
   }
 }
+// 一定範囲でランダムとかやりたいね
 // ウェーブもやりたいね。帰ってから・・いや、今日はすぐ寝るので・・
 
 // 円を描くように発射
@@ -1229,20 +1237,21 @@ function createPattern(index, _pattern){
     let _gun = new simpleGun(20, 240, _bullets, 5);
     let flowSet = [];
     flowSet.push(new setVelocityHub(1, 0));
-    flowSet.push(new setVelocityHub(3, 0));
+    //flowSet.push(new setVelocityHub(3, 0));
+    flowSet.push(new limitedLinearDelayHub(5, 5, 8, 8, 0));
     flowSet.push(new setVelocityHub(5, 0));
     flowSet.push(new matrixArrow(1.05, 0, 0, 1.05, 480));
-    flowSet.push(new matrixArrow(1.05, 0, 0, 0.98, 360));
+    flowSet.push(new matrixArrow(1, 0, 0, 1, 360));
     flowSet.push(new matrixArrow(1.05, 0, 0, -0.98, 240));
     connectFlows(flowSet, [0, 1, 2], [3, 4, 5]);
     _gun.registShot({initialFlow:flowSet[0], wait:10, cost:1, figureId:1, colorId:0, mode:ORIENTED});
-    _gun.registShot({initialFlow:flowSet[1], wait:15, cost:1, figureId:2, colorId:1, mode:ROLLING});
+    _gun.registShot({initialFlow:flowSet[1], wait:60, cost:5, figureId:2, colorId:1, mode:ORIENTED});
     _gun.registShot({initialFlow:flowSet[2], wait:20, cost:1, figureId:3, colorId:2, mode:ORIENTED});
     // というわけでshot追加します。5WayGunいってみよー
     flowSet.push(new n_wayHub(10, 0, PI / 4, 2));
     flowSet.push(new matrixArrow(1.01, 0, 0, 0.8, 420));
     connectFlows(flowSet, [6], [7]);
-    _gun.registShot({initialFlow:flowSet[6], wait:15, cost:5, figureId:3, colorId:3, mode:ORIENTED});
+    _gun.registShot({initialFlow:flowSet[6], wait:30, cost:5, figureId:3, colorId:3, mode:ORIENTED});
     // いいですね～、じゃあ20発くらい中央までとんでってから円形にディレイでとんでくのやろう。
     flowSet.push(new setVelocityHub(10, 0));
     flowSet.push(new matrixArrow(0.98, 0, 0, 0.98, 30));
@@ -1251,7 +1260,7 @@ function createPattern(index, _pattern){
     _pattern.activeFlow.push(flowSet[10]);
     flowSet.push(new matrixArrow(1.01, 0, 0, 1.01, 480));
     connectFlows(flowSet, [8, 9, 10], [9, 10, 11]);
-    _gun.registShot({initialFlow:flowSet[8], wait:25, cost:20, figureId:4, colorId:4, mode:ROLLING});
+    _gun.registShot({initialFlow:flowSet[8], wait:60, cost:20, figureId:4, colorId:4, mode:ROLLING});
     // 処理が止まってしまった・・・
     // 共通のハブ使ってるのが問題なんやね。どうしようか。
     // 順位付けって1フレームの間にやるんでしょ？だったらそのタイミングだけずれてくれれば問題ないよね・・
@@ -1267,7 +1276,7 @@ function createPattern(index, _pattern){
     flowSet.push(new arcHub(5, 0, 2 * PI / 5, 5, 5));
     flowSet.push(new matrixArrow(1.02, 0, 0, 1.02, 240));
     connectFlows(flowSet, [12, 13, 14, 15, 16], [13, 14, 15, 16, 17]);
-    _gun.registShot({initialFlow:flowSet[12], wait:40, cost:25, figureId:5, colorId:5, mode:ROLLING});
+    _gun.registShot({initialFlow:flowSet[12], wait:80, cost:25, figureId:5, colorId:5, mode:ROLLING});
 
     // 次に、・・・え？
     flowSet.push(new arcHub(20, 0, 2 * PI / 5, 5, 1));
@@ -1275,7 +1284,7 @@ function createPattern(index, _pattern){
     flowSet.push(new limitedCircularDelayHub(1, 100, 6, 6, 0, PI / 50));
     flowSet.push(new matrixArrow(1.01, 0, 0, 1.01, 240));
     connectFlows(flowSet, [18, 19, 20], [19, 20, 21]);
-    _gun.registShot({initialFlow:flowSet[18], wait:50, cost:100, figureId:6, colorId:6, mode:ORIENTED});
+    _gun.registShot({initialFlow:flowSet[18], wait:120, cost:100, figureId:6, colorId:6, mode:ORIENTED});
     // とりあえずテストだしこんなもんでいいや。
 
     _gun.setFlow(new controlGun());
