@@ -620,10 +620,13 @@ class simpleGun extends actor{
     // となるとbullet側が親の(parent)Gunを知っていないといけないからまずいなー
     this.stock -= n;
     while(n > 0){
-      if(this.magazine[this.cursor].isActive){ continue; } // activeでないものを探す
+      if(this.magazine[this.cursor].isActive){
+        this.cursor = (this.cursor + 1) % this.magazine.length; // カーソルを進める. こっちに書かないとね。
+        continue;
+      }
       n--;
       let _bullet = this.magazine[this.cursor];
-      this.cursor = (this.cursor + 1) % this.magazine.length; // カーソルを進める
+      // this.cursor = (this.cursor + 1) % this.magazine.length; // カーソルを進める
       _bullet.visual.figureChange(color(hueSet[shot['colorId']], 100, 100), shot['figureId']);
       _bullet.setFlow(shot['initialFlow']);
       _bullet.visual.setVisualMode(shot['mode']);
@@ -644,9 +647,17 @@ class simpleGun extends actor{
     if(this.wait > 0){ this.wait--; } // waitカウントを減らす
   }
   render(gr){
-    this.magazine.forEach(function(b){
-      if(b.isActive){ b.render(gr); }
-    })
+    for(let i = 0; i < this.magazine.length; i++){
+      let b = this.magazine[i];
+      if(b.isActive){
+        b.render(gr);
+        gr.push();
+        gr.fill(255);
+        gr.noStroke();
+        gr.rect(10 + 4 * i, 35, 3, 6);
+        gr.pop();
+      }
+    }
     gr.push();
     gr.noStroke();
     gr.fill(hueSet[this.currentMuzzleIndex], 50, 100); // shotの内容に応じて色を変える
@@ -1245,7 +1256,7 @@ function createPattern(index, _pattern){
     flowSet.push(new matrixArrow(1.05, 0, 0, -0.98, 240));
     connectFlows(flowSet, [0, 1, 2], [3, 4, 5]);
     _gun.registShot({initialFlow:flowSet[0], wait:10, cost:1, figureId:1, colorId:0, mode:ORIENTED});
-    _gun.registShot({initialFlow:flowSet[1], wait:60, cost:5, figureId:2, colorId:1, mode:ORIENTED});
+    _gun.registShot({initialFlow:flowSet[1], wait:30, cost:5, figureId:2, colorId:1, mode:ORIENTED});
     _gun.registShot({initialFlow:flowSet[2], wait:20, cost:1, figureId:3, colorId:2, mode:ORIENTED});
     // というわけでshot追加します。5WayGunいってみよー
     flowSet.push(new n_wayHub(10, 0, PI / 4, 2));
@@ -1260,7 +1271,7 @@ function createPattern(index, _pattern){
     _pattern.activeFlow.push(flowSet[10]);
     flowSet.push(new matrixArrow(1.01, 0, 0, 1.01, 480));
     connectFlows(flowSet, [8, 9, 10], [9, 10, 11]);
-    _gun.registShot({initialFlow:flowSet[8], wait:60, cost:20, figureId:4, colorId:4, mode:ROLLING});
+    _gun.registShot({initialFlow:flowSet[8], wait:40, cost:20, figureId:4, colorId:4, mode:ROLLING});
     // 処理が止まってしまった・・・
     // 共通のハブ使ってるのが問題なんやね。どうしようか。
     // 順位付けって1フレームの間にやるんでしょ？だったらそのタイミングだけずれてくれれば問題ないよね・・
@@ -1276,7 +1287,7 @@ function createPattern(index, _pattern){
     flowSet.push(new arcHub(5, 0, 2 * PI / 5, 5, 5));
     flowSet.push(new matrixArrow(1.02, 0, 0, 1.02, 240));
     connectFlows(flowSet, [12, 13, 14, 15, 16], [13, 14, 15, 16, 17]);
-    _gun.registShot({initialFlow:flowSet[12], wait:80, cost:25, figureId:5, colorId:5, mode:ROLLING});
+    _gun.registShot({initialFlow:flowSet[12], wait:60, cost:25, figureId:5, colorId:5, mode:ROLLING});
 
     // 次に、・・・え？
     flowSet.push(new arcHub(20, 0, 2 * PI / 5, 5, 1));
@@ -1284,12 +1295,13 @@ function createPattern(index, _pattern){
     flowSet.push(new limitedCircularDelayHub(1, 100, 6, 6, 0, PI / 50));
     flowSet.push(new matrixArrow(1.01, 0, 0, 1.01, 240));
     connectFlows(flowSet, [18, 19, 20], [19, 20, 21]);
-    _gun.registShot({initialFlow:flowSet[18], wait:120, cost:100, figureId:6, colorId:6, mode:ORIENTED});
+    _gun.registShot({initialFlow:flowSet[18], wait:80, cost:100, figureId:6, colorId:6, mode:ORIENTED});
     // とりあえずテストだしこんなもんでいいや。
 
     _gun.setFlow(new controlGun());
     _pattern.actors.push(_gun);
     activateAll([_gun]);
+    // かなりの確率で処理が止まるので考えないといけないね・・・・
   }
 }
 // インタラクションのイメージ
