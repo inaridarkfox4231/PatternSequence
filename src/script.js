@@ -37,6 +37,10 @@ const BULLET = 1;
 const PATTERN_NUM = 14; // パターン増やすときはここを変えてね。
 const INITIAL_PATTERN_INDEX = 13; // 最初に現れるパターン。調べたいパターンを先に見たいときにどうぞ。
 
+// 時間表示の設置。
+const timeCounter = document.createElement('div');
+document.body.appendChild(timeCounter);
+
 function setup(){
   myCanvas = createCanvas(640, 480);
   colorMode(HSB, 100); // hueだけでいろいろ指定出来て便利なので。
@@ -51,8 +55,12 @@ function setup(){
 }
 
 function draw(){
+  const start = performance.now();
   all.update();
   all.display();
+  const end = performance.now();
+  const timeStr = (end - start).toPrecision(4);
+  timeCounter.innerText = `${timeStr}ms`;
 }
 
 // -------------------------------------------------------------------------------------------------- //
@@ -626,7 +634,6 @@ class simpleGun extends actor{
       }
       n--;
       let _bullet = this.magazine[this.cursor];
-      // this.cursor = (this.cursor + 1) % this.magazine.length; // カーソルを進める
       _bullet.visual.figureChange(color(hueSet[shot['colorId']], 100, 100), shot['figureId']);
       _bullet.setFlow(shot['initialFlow']);
       _bullet.visual.setVisualMode(shot['mode']);
@@ -654,7 +661,7 @@ class simpleGun extends actor{
         gr.push();
         gr.fill(255);
         gr.noStroke();
-        gr.rect(10 + 4 * i, 35, 3, 6);
+        gr.rect(10 + 2 * i, 35, 2, 6);
         gr.pop();
       }
     }
@@ -711,6 +718,18 @@ class controlGun extends flow{
     // まあ、また帰ってからぼちぼちやるさ。
   }
 }
+
+// executeにfireってあるけどこれでconvertしてもいいかもね。
+// つまり、攻撃の準備をflow化してその間のアニメーションとかやってみるっていう。
+// それはrender命令に手持ちのflowでレンダリング、って書けば達成できる
+// たとえば100発使うなら100フレームかけて準備、その間のアニメーション用意、とか。
+// そうすれば1フレームで100発準備しなくて済むからパフォーマンス改善するし。
+// 準備が終わったらcontrolGunに戻る、つまり準備中は何もできないってわけ。
+// 何が言いたいかというとsimpleGunのfireんとこ長ったらしいから分離したいって話。
+// 残りの弾数とかそういうのもcontrolGunの方でバリデーションかけて・・とか。
+
+// もしそれでも動かしたいなら、controlGunのupdateメソッドの方に移動関連のメソッドを書いて、
+// それとは別にflowで・・うん、本来はそうするべきよね・・
 
 // ビジュアル担当
 class figure{
@@ -1242,7 +1261,7 @@ function createPattern(index, _pattern){
     _pattern.bgLayer.background(0, 0, 50);
     // bulletを作る
     let _bullets = [];
-    for(let i = 0; i < 100; i++){
+    for(let i = 0; i < 200; i++){
       _bullets.push(new simpleBullet());
     }
     let _gun = new simpleGun(20, 240, _bullets, 5);
