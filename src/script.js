@@ -932,7 +932,8 @@ class pauseState extends flow{
   constructor(){
     super();
     this.bgLayer = createGraphics(width, height);
-    this.objLayer = createGraphics(width, height);
+    //this.objLayer = createGraphics(width, height);
+    this.currentPatternIndex = -1; // initializeの際にentityから値を受け取ってconvertの際に更新値を返す感じ
     this.initialState = PRE; // initializeあり
   }
   initialize(_entity){
@@ -955,11 +956,7 @@ class pauseState extends flow{
     this.bgLayer.rect(245, 420, 150, 40);
     this.bgLayer.fill(255);
     this.bgLayer.text("TO PATTERN", 260, 450);
-    // objLayerにデフォルトの状態を描画しておく
-    this.objLayer.clear(); // もちろん！
-    this.objLayer.fill(255);
-    this.objLayer.textSize(20);
-    this.objLayer.text("CURRENT PATTERN:" + " " + _entity.currentPatternIndex.toString(), 180, 180);
+    this.currentPatternIndex = _entity.currentPatternIndex; // ここで代入
     _entity.setState(ACT);
   }
   patternShift(curId){
@@ -968,18 +965,14 @@ class pauseState extends flow{
     let newCurId = curId;
     if(clickPosY < 240){ newCurId = (curId + 1) % PATTERN_NUM; }
     else if(clickPosY > 280){ newCurId = (curId + PATTERN_NUM - 1) % PATTERN_NUM; }
-    this.objLayer.clear();
-    this.objLayer.fill(255);
-    this.objLayer.textSize(20);
-    this.objLayer.text("CURRENT PATTERN:" + " " + newCurId.toString(), 180, 180);
     return newCurId;
   }
   execute(_entity){
     if(_entity.state === PRE){ this.initialize(_entity); }
     // クリックでパターン変数をいじる
     if(clickPosX > 180 && clickPosX < 420 && clickPosY > 220 && clickPosY < 300){
-      let newCurId = this.patternShift(_entity.currentPatternIndex);
-      _entity.currentPatternIndex = newCurId;
+      // let newCurId = this.patternShift(_entity.currentPatternIndex);
+      this.currentPatternIndex = this.patternShift(this.currentPatternIndex);;
       flagReset();
     }
     // 終了条件は画面下のボタンをクリック
@@ -991,11 +984,20 @@ class pauseState extends flow{
   }
   convert(_entity){
     // ランダムではないのでオーバーライドする
+    _entity.currentPatternIndex = this.currentPatternIndex;
     _entity.setFlow(this.convertList[_entity.currentPatternIndex]);
+    this.currentPatternIndex = -1; // 初期化～
   }
-  display(_entity){
+  display(){
     image(this.bgLayer, 0, 0);
-    image(this.objLayer, 0, 0);
+    //image(this.objLayer, 0, 0);
+    if(this.currentPatternIndex >= 0){ // 最初だけ描画されないようにする
+      push();
+      fill(255);
+      textSize(20);
+      text("CURRENT PATTERN:" + " " + this.currentPatternIndex.toString(), 180, 180);
+      pop();
+    }
   }
 }
 
