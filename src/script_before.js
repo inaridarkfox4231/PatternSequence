@@ -553,7 +553,7 @@ class actor{
     if(!this.isActive){ return; } // ここはそのまま
     this.currentFlow.execute(this); // これだけ。すっきりした。
   }
-  render(){} // 描画用
+  render(gr){} // 描画用
 }
 
 // creature(今までのmovingActor)
@@ -568,8 +568,8 @@ class creature extends actor{
   setPos(x, y){
     this.pos.set(x, y);
   }
-  render(){
-    this.visual.render(this.pos); // 自分の位置に表示
+  render(gr){
+    this.visual.render(gr, this.pos); // 自分の位置に表示
   }
 }
 
@@ -582,9 +582,9 @@ class bullet extends creature{
   setVelocity(vx, vy){
     this.velocity.set(vx, vy);
   }
-  render(){
+  render(gr){
     // rendering関数の上書き。ORIENTEDモードに対応するため。
-    this.visual.render(this.pos, this.velocity);
+    this.visual.render(gr, this.pos, this.velocity);
   }
 }
 // 速度を使って位置を更新する命令は基本的にflow側に書きます。
@@ -664,22 +664,22 @@ class simpleGun extends actor{
     this.currentFlow.execute(this);
     if(this.wait > 0){ this.wait--; } // waitカウントを減らす
   }
-  render(){
+  render(gr){
     const start_3 = performance.now();
-    this.magazine.forEach(function(b){ if(b.isActive){ b.render(); } });
+    this.magazine.forEach(function(b){ if(b.isActive){ b.render(gr); } });
     const end_3 = performance.now();
     const renderBulletStr = (end_3 - start_3).toPrecision(4);
     renderBulletCounter.innerText = 'renderBullet:' + `${renderBulletStr}ms`;
 
     const start_4 = performance.now();
-    push();
-    noStroke();
-    fill(hueSet[this.currentMuzzleIndex], 50, 100); // shotの内容に応じて色を変える
+    gr.push();
+    gr.noStroke();
+    gr.fill(hueSet[this.currentMuzzleIndex], 50, 100); // shotの内容に応じて色を変える
     // あと、残数分かりやすく
-    rect(10, 10, 200 * (this.stock / this.magazine.length), 20);
-    translate(this.pos.x, this.pos.y);
-    ellipse(0, 0, 30, 30); // とりあえず、円。
-    pop();
+    gr.rect(10, 10, 200 * (this.stock / this.magazine.length), 20);
+    gr.translate(this.pos.x, this.pos.y);
+    gr.ellipse(0, 0, 30, 30); // とりあえず、円。
+    gr.pop();
     const end_4 = performance.now();
     const renderGunStr = (end_4 - start_4).toPrecision(4);
     renderGunCounter.innerText = 'renderGun:' + `${renderGunStr}ms`;
@@ -819,26 +819,26 @@ class figure{
       gr.rect(23, 17, 2, 5);
     }
   }
-  render(pos, dir = undefined){
+  render(gr, pos, dir = undefined){
     // dirは速度情報、速度でバリエーションしたいときに使う。
     // bulletのrender命令で速度を代入したりとかする。
-    push();
-    translate(pos.x, pos.y);
-    this.rotate(dir);
-    image(this.graphic, -20, -20); // 20x20に合わせる
-    pop();
+    gr.push();
+    gr.translate(pos.x, pos.y);
+    this.rotate(gr, dir);
+    gr.image(this.graphic, -20, -20); // 20x20に合わせる
+    gr.pop();
   }
   setVisualMode(newMode){
     this.mode = newMode; // とりあえずROLLINGとORIENTEDしか思いつかない
     this.rotation = 0; // ローテーションリセット
   }
-  rotate(dir = undefined){
+  rotate(gr, dir = undefined){
     if(this.mode === ROLLING){ // 回転する
       this.rotation += 0.1;
-      rotate(this.rotation);
+      gr.rotate(this.rotation);
     }else if(this.mode === ORIENTED){ // 速度の方向に合わせる
       this.rotation = dir.heading() - (PI / 2);
-      rotate(this.rotation);
+      gr.rotate(this.rotation);
     }
   }
 }
@@ -872,7 +872,9 @@ class pattern extends flow{
     this.actors = [];
     this.activeFlow = []; // updateしたいflowをここに入れる
     this.bgLayer = createGraphics(width, height);
+    this.objLayer = createGraphics(width, height);
     this.bgLayer.colorMode(HSB, 100);
+    this.objLayer.colorMode(HSB, 100);
     this.visited = false; // 最初に来た時にtrueになってそれ以降は再訪してもinitializeが実行されない。
     this.theme = ""; // テーマ名をここに書く（ラベル）
     this.initialState = PRE; // initializeがある
@@ -900,7 +902,13 @@ class pattern extends flow{
     updateCounter.innerText = 'update:' + `${updateStr}ms`;
 
     this.activeFlow.forEach(function(f){ f.update(); })
-    // objLayerやめた。render系の命令はrenderにしか書かないことにした
+    this.objLayer.clear(); // objLayerは毎フレームリセットしてactorを貼り付ける(displayableでなければスルーされる)
+
+    const start_2 = performance.now();
+    this.actors.forEach(function(a){ a.render(this.objLayer); }, this)
+    const end_2 = performance.now();
+    const renderStr = (end_2 - start_2).toPrecision(4);
+    renderCounter.innerText = 'render:' + `${renderStr}ms`;
 
     // 離脱条件はPAUSEのところをクリック
     if(clickPosX > 245 && clickPosX < 395 && clickPosY > 420 && clickPosY < 460){
@@ -914,11 +922,7 @@ class pattern extends flow{
   }
   display(){
     image(this.bgLayer, 0, 0);
-    const start_2 = performance.now();
-    this.actors.forEach(function(a){ a.render(); }, this)
-    const end_2 = performance.now();
-    const renderStr = (end_2 - start_2).toPrecision(4);
-    renderCounter.innerText = 'render:' + `${renderStr}ms`;
+    image(this.objLayer, 0, 0);
   }
 }
 
