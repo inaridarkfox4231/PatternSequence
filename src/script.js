@@ -39,7 +39,15 @@ const INITIAL_PATTERN_INDEX = 13; // 最初に現れるパターン。調べた�
 
 // 時間表示の設置。
 const timeCounter = document.createElement('div');
+const updateCounter = document.createElement('div');
+const renderCounter = document.createElement('div');
+const renderBulletCounter = document.createElement('div');
+const renderGunCounter = document.createElement('div');
 document.body.appendChild(timeCounter);
+document.body.appendChild(updateCounter);
+document.body.appendChild(renderCounter);
+document.body.appendChild(renderBulletCounter);
+document.body.appendChild(renderGunCounter);
 
 function setup(){
   myCanvas = createCanvas(640, 480);
@@ -60,7 +68,7 @@ function draw(){
   all.display();
   const end = performance.now();
   const timeStr = (end - start).toPrecision(4);
-  timeCounter.innerText = `${timeStr}ms`;
+  timeCounter.innerText = 'all:' + `${timeStr}ms`;
 }
 
 // -------------------------------------------------------------------------------------------------- //
@@ -305,7 +313,10 @@ class limitedDelayHub extends flow{
     if(_bullet.state === PRE){
       this.count++;
       _bullet.timer.setting(this.count * this.interval);
-      if(this.count === this.limit){ this.count = 0; }
+      console.log(_bullet.timer.limit);
+      if(this.count === this.limit){
+        this.count = 0; // ここをresetとでもして個別の処理を与えるとか？(ごめん勘違いバグでもなんでも無かった)
+      }
       this.setVelocity(_bullet);
       _bullet.state = ACT;
     }
@@ -654,17 +665,13 @@ class simpleGun extends actor{
     if(this.wait > 0){ this.wait--; } // waitカウントを減らす
   }
   render(gr){
-    for(let i = 0; i < this.magazine.length; i++){
-      let b = this.magazine[i];
-      if(b.isActive){
-        b.render(gr);
-        gr.push();
-        gr.fill(255);
-        gr.noStroke();
-        gr.rect(10 + 2 * i, 35, 2, 6);
-        gr.pop();
-      }
-    }
+    const start_3 = performance.now();
+    this.magazine.forEach(function(b){ if(b.isActive){ b.render(gr); } });
+    const end_3 = performance.now();
+    const renderBulletStr = (end_3 - start_3).toPrecision(4);
+    renderBulletCounter.innerText = 'renderBullet:' + `${renderBulletStr}ms`;
+
+    const start_4 = performance.now();
     gr.push();
     gr.noStroke();
     gr.fill(hueSet[this.currentMuzzleIndex], 50, 100); // shotの内容に応じて色を変える
@@ -673,6 +680,10 @@ class simpleGun extends actor{
     gr.translate(this.pos.x, this.pos.y);
     gr.ellipse(0, 0, 30, 30); // とりあえず、円。
     gr.pop();
+    const end_4 = performance.now();
+    const renderGunStr = (end_4 - start_4).toPrecision(4);
+    renderGunCounter.innerText = 'renderGun:' + `${renderGunStr}ms`;
+
   }
   // muzzleにshotの種類となるflowをregistする関数「registShot」
   // 弾倉にbulletのsetをregistする関数「registBullet」
@@ -883,10 +894,22 @@ class pattern extends flow{
   }
   execute(_entity){
     if(_entity.state === PRE){ this.initialize(_entity); }
+
+    const start_1 = performance.now();
     this.actors.forEach(function(a){ a.update(); })
+    const end_1 = performance.now();
+    const updateStr = (end_1 - start_1).toPrecision(4);
+    updateCounter.innerText = 'update:' + `${updateStr}ms`;
+
     this.activeFlow.forEach(function(f){ f.update(); })
     this.objLayer.clear(); // objLayerは毎フレームリセットしてactorを貼り付ける(displayableでなければスルーされる)
+
+    const start_2 = performance.now();
     this.actors.forEach(function(a){ a.render(this.objLayer); }, this)
+    const end_2 = performance.now();
+    const renderStr = (end_2 - start_2).toPrecision(4);
+    renderCounter.innerText = 'render:' + `${renderStr}ms`;
+
     // 離脱条件はPAUSEのところをクリック
     if(clickPosX > 245 && clickPosX < 395 && clickPosY > 420 && clickPosY < 460){
       this.convert(_entity); // convertするだけ
