@@ -652,7 +652,6 @@ class simpleGun extends actor{
       _bullet.registGun(this); // 親を登録
       _bullet.activate(); // used要らない。bullet自身が判断して自分の親のmagazineに戻ればいいだけ。
     }
-    this.stock -= n;
     this.wait = shot['wait']; // waitを設定
   }
 
@@ -711,10 +710,10 @@ class controlGun extends flow{
     else if(keyIsDown(DOWN_ARROW)){ _gun.pos.y += _gun.speed; }
     else if(keyIsDown(RIGHT_ARROW)){ _gun.pos.x += _gun.speed; }
     else if(keyIsDown(LEFT_ARROW)){ _gun.pos.x -= _gun.speed; }
-    if(_gun.pos.x < 0){ _gun.pos.x = 0; }
-    if(_gun.pos.x > width){ _gun.pos = width; }
-    if(_gun.pos.y < 0){ _gun.pos.y = 0; }
-    if(_gun.pos.y > height){ _gun.pos.y = height; }
+    if(_gun.pos.x <= 15){ _gun.pos.x = 15; }
+    if(_gun.pos.x >= width - 15){ _gun.pos.x = width - 15; }
+    if(_gun.pos.y <= 15){ _gun.pos.y = 15; }
+    if(_gun.pos.y >= height - 15){ _gun.pos.y = height - 15; }
     if(keyIsDown(90)){
       // Zボタン
       _gun.fire();
@@ -1313,11 +1312,7 @@ function createPattern(index, _pattern){
     connectFlows(flowSet, [8, 9, 10], [9, 10, 11]);
     _gun.registShot({initialFlow:flowSet[8], wait:40, cost:20, figureId:4, colorId:4, mode:ROLLING});
     // 処理が止まってしまった・・・
-    // 共通のハブ使ってるのが問題なんやね。どうしようか。
-    // 順位付けって1フレームの間にやるんでしょ？だったらそのタイミングだけずれてくれれば問題ないよね・・
-    // 総数の概念を与える。assembleのlimitのような。今回の場合だと20. で、5だから、
-    // タイマーで5ずつずらした値をセットしてやればいいと思う。で、20だからそれでリセットする。
-    // うまくいった。
+    // 処理が止まった原因は無限ループ（continueでindexを増やし忘れるミス）によるものでした。
     // 次に、散開するやつやってみたい
 
     flowSet.push(new setVelocityHub(5, 0));
